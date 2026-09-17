@@ -138,7 +138,36 @@ pub fn run() {
     // tauri.conf.json has no `plugins.updater` block. Adopters who don't
     // publish updates may drop the block, so only register it when present.
     let has_updater = context.config().plugins.0.contains_key("updater");
+    // Single-instance MUST be registered before every other plugin — that is
+    // the plugin's own requirement, and it is also what makes the check cheap:
+    // the second process decides it is redundant and exits before it has
+    // opened a file, bound a port, or claimed an audio device.
+    //
+    // Why this exists. A booth ran two copies at once for half an hour: one
+    // started by the watchdog LaunchAgent and one started by hand from the
+    // Dock. Both polled Planning Center, both captured audio, both raced each
+    // other writing the same JSON in the data directory — the cross-process
+    // case that the in-process write lock in settings.rs cannot protect
+    // against, and the data folder still carries `dashboards.json.damaged-*`
+    // from an earlier round of exactly that. Only one of them held the web
+    // gateway's port, so phones and kiosks saw the app as down while it was
+    // plainly running on screen.
+    //
+    // The running copy wins and its window comes forward. That is also the
+    // right answer for the way this happens in practice: someone clicks
+    // ProDeck in the Dock, not realising it is already running headless under
+    // the watchdog, and now gets the live window instead of a second app.
     let mut builder = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            use tauri::Manager;
+            if let Some(w) = app.get_webview_window("main") {
+                // Unminimise first: show() on a minimised window leaves it in
+                // the Dock, so the click appears to do nothing at all.
+                let _ = w.unminimize();
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init());
     if has_updater {

@@ -5,7 +5,16 @@
   <!-- Keeps ProDeck running: launchd relaunches it within ~10s of any crash
        (SuccessfulExit=false relaunches only non-zero exits, so a deliberate
        Cmd-Q stays quit). To restart on purpose:
-         launchctl kickstart -k gui/$(id -u)/com.prodeck.watchdog -->
+         launchctl kickstart -k gui/$(id -u)/com.prodeck.watchdog
+
+       Since 0.9.86 ProDeck also refuses to run twice: a second launch hands
+       off to the copy already running and exits. So if someone has started
+       ProDeck by hand (from the Dock, say), THIS job's launch will exit 0 and
+       launchd will leave the job down — the app keeps running, but unguarded,
+       and `launchctl list com.prodeck.watchdog` will show no PID. To put it
+       back under the watchdog, quit ProDeck and kickstart as above. That is
+       the deliberate trade: one unguarded copy beats two copies racing each
+       other over the same data files. -->
   <key>Label</key><string>com.prodeck.watchdog</string>
   <key>ProgramArguments</key>
   <array><string>/Applications/ProDeck.app/Contents/MacOS/prodeck</string></array>

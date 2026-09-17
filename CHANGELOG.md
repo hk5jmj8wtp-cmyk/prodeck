@@ -67,6 +67,25 @@ application once, in about five minutes; ProDeck shows the exact three redirect
 addresses to paste. Help → *Registering a Planning Center application* walks
 through it.
 
+### ProDeck refuses to run twice
+
+Starting ProDeck when it's already running now brings the running window
+forward instead of opening a second copy.
+
+This was not cosmetic. A booth spent half an hour running two copies at once —
+one started by the watchdog at login, one started by hand from the Dock. Both
+polled Planning Center, both held the audio device, and both wrote the same
+files in the data folder, which is the one case the app's write protection
+can't cover. Only one of them owned the web gateway's port, so phones, the
+kiosk and the green-room audio all showed as offline while ProDeck sat there
+plainly running on screen.
+
+One consequence worth knowing on a booth Mac: if someone has started ProDeck by
+hand, the watchdog's own launch now steps aside, so the app is running but no
+longer being watched for crashes. Quit ProDeck and start it again from the
+watchdog to put it back. One unguarded copy is the deliberate trade against two
+copies racing each other over the same data.
+
 ### Windows copies now update themselves
 
 Windows installs check the same update feed the Mac does and offer new versions
