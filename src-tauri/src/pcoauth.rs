@@ -59,13 +59,21 @@ const REVOKE: &str = "https://api.planningcenteronline.com/oauth/revoke";
 /// should be able to read that list and not flinch.
 const SCOPES: &str = "services people";
 
-/// ProDeck's registered **public** OAuth application. Not a secret: a client id
-/// identifies the app, and PKCE (not this string) is what proves the token
-/// request is genuine. Empty until the application is registered, and while it
-/// is empty the UI asks the church to register their own and paste its id —
-/// which is also the escape hatch for anyone who would rather not route
-/// through ours.
-const BUILT_IN_CLIENT_ID: &str = "";
+/// ProDeck's registered **public** OAuth application — "ProDeck by White Oak
+/// Media", in the White Oak Media organization (O525904), registered
+/// 2026-09-17.
+///
+/// Committed in the clear on purpose. A public application has no client
+/// secret at all — Planning Center refuses to issue one, on the grounds that
+/// anyone holding the binary would have it — so this string identifies the app
+/// and nothing more. PKCE is what proves a token request is genuine. Treating
+/// this as a credential (env var, keychain, build secret) would add ceremony
+/// and protect nothing.
+///
+/// Leave it empty in a fork and the UI walks the church through registering
+/// their own application instead, which is also the escape hatch for anyone
+/// who would rather not route through ours.
+const BUILT_IN_CLIENT_ID: &str = "7c15d9fe8c83ba4022265b1b0a91c5da2da3ad52ee8e2a486fb5ce634f6421f4";
 
 /// Loopback ports tried in order. Every one of these must be registered as a
 /// redirect URI on the OAuth application, so the list is fixed rather than
@@ -734,6 +742,23 @@ mod tests {
             }
         });
         assert_eq!(wait_for_callback(l, "st4te").await, Ok("real".into()));
+    }
+
+    #[test]
+    fn the_built_in_client_id_is_intact() {
+        // Planning Center issues a 64-character hex client id. This has been
+        // hand-copied out of a browser once and could be hand-edited again; a
+        // truncated or whitespace-padded one fails at the authorize step with
+        // "invalid_client", which reads like a registration problem rather
+        // than a typo here. Empty stays legal — that's a fork with no
+        // application of its own.
+        let id = BUILT_IN_CLIENT_ID;
+        if id.is_empty() {
+            return;
+        }
+        assert_eq!(id.len(), 64, "expected 64 hex chars, got {}", id.len());
+        assert!(id.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()), "{id}");
+        assert_eq!(id.trim(), id, "no stray whitespace");
     }
 
     #[test]
