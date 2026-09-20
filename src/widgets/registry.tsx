@@ -59,6 +59,7 @@ import { usePco, fmtLen, type TeamMember , isDeclined } from "../pcoStore";
 import { stageCallState, stageCallServiceState, serviceEndsAt, fmtClock } from "../lib/stageCall";
 import { servicePhase, displayServiceTimeId } from "../lib/serviceClock";
 import { itemStartTimes } from "../lib/planTimes";
+import { freshness } from "../lib/planPick";
 import { useAlerts } from "../alertsStore";
 import { useRelay } from "../relayStore";
 import { Avatar, MicCard } from "../components/PcoBits";
@@ -1740,15 +1741,14 @@ function ReadinessWidget() {
     }
   }
 
-  // "This week's plan": the first plan dated today or later (PCO lists them
-  // soonest-first); yesterday counts too so a Saturday-night setup still
-  // matches Sunday... and vice versa across midnight.
-  const today = Date.now() - 36 * 3600_000;
-  const targetPlan =
-    pco.plans.find((p) => {
-      const t = Date.parse(p.date ?? "");
-      return Number.isFinite(t) && t >= today;
-    }) ?? null;
+  // "This week's plan": the first plan dated today or later. Shares
+  // lib/planPick with the store's auto-target so the readiness tile can't
+  // disagree with the thing that actually selects the plan — and so this
+  // copy doesn't re-acquire the bug that one just lost, where dating a plan
+  // from Planning Center's display text read "December 23 & 24, 2026" as
+  // 2024 and marked every two-day service long expired.
+  const now = Date.now();
+  const targetPlan = pco.plans.find((p) => freshness(p, now) === "fresh") ?? null;
   const planOk = !!pco.selectedPlanId && (!targetPlan || pco.selectedPlanId === targetPlan.id);
 
   interface Row {

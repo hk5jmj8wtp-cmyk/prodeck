@@ -35,6 +35,7 @@ import {
   IS_DEMO,
   pcoOauthStatus,} from "./lib/tauri";
 import { normTitle, bestMatch } from "./lib/match";
+import { autoTargetPlan, mergePlanPages } from "./lib/planPick";
 
 export interface ServiceType {
   id: string;
@@ -43,7 +44,10 @@ export interface ServiceType {
 export interface Plan {
   id: string;
   title: string;
+  /** Display text from Planning Center's `dates`. For showing, never for maths. */
   date: string;
+  /** ISO timestamp from `sort_date`. Everything that compares dates uses this. */
+  sortDate: string;
 }
 export interface PlanItem {
   id: string;
@@ -108,6 +112,7 @@ function parsePlans(j: Json | null): Plan[] {
       id: String(d.id),
       title: a.title || a.series_title || a.dates || "Untitled plan",
       date: a.dates || a.sort_date || "",
+      sortDate: a.sort_date || "",
     };
   });
 }
@@ -821,26 +826,24 @@ export function PcoProvider({ children }: { children: ReactNode }) {
     setStatus("Loading plans…");
     try {
       // `filter=future` drops today's plan as soon as Planning Center decides
-      // its service time has passed. The auto-target effect then cannot find
-      // the manually selected plan in `plans` and replaces it with next week.
-      // Keep the future query for the useful chronological list, but merge in
-      // recent plans so the current weekend remains selectable all day.
+      // its service time has passed, so a second query has to supply the
+      // just-finished weekend or the 11:00 loses the plan the 8:00 was on.
+      //
+      // That second query used to be `order=-sort_date` with no filter, which
+      // reads as "most recent" and is not: descending sort_date starts at the
+      // furthest-FUTURE plan on the books and walks backwards. On this account
+      // it returned March 2027 down to today — the same 25 plans the future
+      // query already had, so the merge was a no-op and today's plan survived
+      // only by landing on the last row. `filter=past` is what actually
+      // reaches backwards. (It needs the explicit order: without it Planning
+      // Center starts at the oldest plan in the account, which here is 2011.)
       const futureJson = await pcoGet(
         `services/v2/service_types/${stId}/plans?filter=future&order=sort_date&per_page=25`,
       );
-      const recentJson = await pcoGet(
-        `services/v2/service_types/${stId}/plans?order=-sort_date&per_page=25`,
+      const pastJson = await pcoGet(
+        `services/v2/service_types/${stId}/plans?filter=past&order=-sort_date&per_page=10`,
       ).catch(() => null);
-      const future = parsePlans(futureJson);
-      const recent = parsePlans(recentJson);
-      const byId = new Map<string, Plan>();
-      for (const plan of [...recent, ...future]) byId.set(plan.id, plan);
-      let parsed = [...byId.values()].sort((a, b) => {
-        const at = Date.parse(a.date);
-        const bt = Date.parse(b.date);
-        if (Number.isFinite(at) && Number.isFinite(bt)) return at - bt;
-        return a.date.localeCompare(b.date);
-      });
+      let parsed = mergePlanPages([parsePlans(pastJson), parsePlans(futureJson)]);
       if (parsed.length === 0) {
         // Defensive fallback for organizations whose API does not support the
         // future filter in the usual way.
@@ -1117,21 +1120,18 @@ export function PcoProvider({ children }: { children: ReactNode }) {
     // The booth picks this week's plan; browser clients follow it. Demo mode
     // has no booth to follow, so it picks for itself.
     if (IS_WEB && !IS_DEMO) return;
-    const fresh = (p: Plan) => {
-      const t = Date.parse(p.date);
-      return Number.isFinite(t) && t >= Date.now() - 36 * 3600_000;
-    };
     const tick = async () => {
       if (autoTargetBusy.current || !loaded.current || !stRef.current) return;
-      const target = plans
-        .filter(fresh)
-        .sort((a, b) => Date.parse(a.date) - Date.parse(b.date))[0];
-      if (!target) return;
-      const cur = plans.find((p) => p.id === selectedPlanId);
-      if ((cur && fresh(cur)) || selectedPlanId === target.id) return;
+      // The decision lives in lib/planPick so it can be tested against the
+      // real shapes Planning Center returns. It switches only on positive
+      // evidence the selection is finished with, and treats "that plan isn't
+      // in the list I loaded" as unknown rather than expired — which is what
+      // used to throw the booth months forward on a service-type change.
+      const next = autoTargetPlan(plans, selectedPlanId, Date.now());
+      if (!next) return;
       autoTargetBusy.current = true;
       try {
-        await selectPlan(target.id);
+        await selectPlan(next);
       } finally {
         autoTargetBusy.current = false;
       }

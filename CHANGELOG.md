@@ -67,6 +67,36 @@ application once, in about five minutes; ProDeck shows the exact three redirect
 addresses to paste. Help → *Registering a Planning Center application* walks
 through it.
 
+### Fixed — picking a plan jumped months into the future
+
+Selecting a Christmas service, a conference, or any other plan that spans two
+days would immediately throw the booth onto a different plan, often months
+ahead.
+
+Planning Center gives each plan a human-readable date like
+`December 23 & 24, 2026`. ProDeck was reading that text to work out when the
+plan happened — and a computer reading it takes the second day as a *year*:
+`December 23 & 24, 2026` becomes 2024, and `October 16 & 17, 2026` becomes
+2017. No error, just a plan silently dated years in the past. ProDeck then
+decided it was a finished service and moved you to the next "current" one. Any
+service on a single date was unaffected, which is why this only ever bit the
+Christmas and conference plans.
+
+ProDeck now reads the machine-readable date Planning Center supplies alongside
+it, and the same shared rule is used by the Service Readiness tile, which had
+its own copy of the mistake.
+
+Two related fixes came with it:
+
+- **Today's plan stays selected all Sunday.** Planning Center removes a plan
+  from its "future" list once the service time passes, and the query meant to
+  cover that gap was fetching the wrong end of the calendar — the furthest
+  *future* plans rather than recent ones. Today's plan was staying on screen by
+  coincidence. The 11:00 could have been filed against the wrong plan.
+- **A plan you chose is never overridden because it hasn't loaded yet.**
+  Switching service type replaces the plan list, and a selection that wasn't in
+  the new list was being treated as expired rather than simply absent.
+
 ### ProDeck refuses to run twice
 
 Starting ProDeck when it's already running now brings the running window
