@@ -117,3 +117,37 @@ describe("micAlerts", () => {
     expect(describeAlert(a)).toBe("Mic 3 (Denise Dumas) — silent for 3 min");
   });
 });
+
+/**
+ * LAeq vs an average of decibels. These answer different questions and the
+ * difference is the whole reason exposure limits are written in LAeq: a song
+ * that sits quiet and peaks loud carries far more energy than its needle
+ * average suggests.
+ */
+describe("energy average (LAeq)", () => {
+  const leq = (dbs: number[]) =>
+    10 * Math.log10(dbs.reduce((a, d) => a + Math.pow(10, d / 10), 0) / dbs.length);
+  const mean = (dbs: number[]) => dbs.reduce((a, d) => a + d, 0) / dbs.length;
+
+  it("is dominated by the loud moments, unlike a dB average", () => {
+    // Half the time at 85, half at 95. The needle averages 90; the energy
+    // average is over 2 dB higher, because 95 carries ten times the power.
+    const s = [85, 85, 85, 85, 95, 95, 95, 95];
+    expect(Math.round(mean(s))).toBe(90);
+    expect(leq(s)).toBeGreaterThan(92);
+  });
+
+  it("agrees with the dB average on a steady level", () => {
+    const s = [90, 90, 90, 90];
+    expect(leq(s)).toBeCloseTo(mean(s), 6);
+  });
+
+  it("separates two services a dB average calls identical", () => {
+    const steady = [90, 90, 90, 90, 90, 90];
+    const peaky = [86, 86, 86, 86, 86, 110];
+    // Same needle average to the decibel...
+    expect(mean(steady)).toBeCloseTo(mean(peaky), 6);
+    // ...and nowhere near the same exposure.
+    expect(leq(peaky) - leq(steady)).toBeGreaterThan(10);
+  });
+});

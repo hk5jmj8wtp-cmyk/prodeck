@@ -107,6 +107,155 @@ struct LufsReading {
     peak_db: f64,
 }
 
+/// Bilinear transform of one analog biquad into the digital domain.
+/// Coefficient arrays are [s^0, s^1, s^2].
+///
+/// `f_ref` prewarps the mapping so this section's own characteristic frequency
+/// lands where the analog prototype put it. Without it the transform squeezes
+/// the top of the spectrum: the 12.2 kHz pole pair of both weighting curves
+/// came out low enough to put 8 kHz 0.7 dB off at 44.1 kHz, and worse above.
+/// Every section gets prewarped at its own poles, so each is exact where it
+/// does its work.
+fn bilinear(b: [f64; 3], a: [f64; 3], fs: f64, f_ref: f64) -> Biquad {
+    use std::f64::consts::PI;
+    let w0 = 2.0 * PI * f_ref;
+    let k = w0 / (PI * f_ref / fs).tan();
+    let kk = k * k;
+    let nb0 = b[2] * kk + b[1] * k + b[0];
+    let nb1 = -2.0 * b[2] * kk + 2.0 * b[0];
+    let nb2 = b[2] * kk - b[1] * k + b[0];
+    let na0 = a[2] * kk + a[1] * k + a[0];
+    let na1 = -2.0 * a[2] * kk + 2.0 * a[0];
+    let na2 = a[2] * kk - a[1] * k + a[0];
+    Biquad::new(nb0 / na0, nb1 / na0, nb2 / na0, na1 / na0, na2 / na0)
+}
+
+/// |H(e^jw)| of a biquad cascade at `f` Hz. Used to normalise the weighting
+/// curves to exactly 0 dB at 1 kHz, which the analog prototypes are not —
+/// and which the bilinear transform shifts slightly besides, differently at
+/// 44.1k and 48k. Measuring and dividing is self-correcting; a hard-coded
+/// gain constant would be a little wrong at every rate but one.
+fn cascade_gain(filters: &[Biquad], fs: f64, f: f64) -> f64 {
+    use std::f64::consts::PI;
+    let w = 2.0 * PI * f / fs;
+    let (cw, sw) = (w.cos(), w.sin());
+    let (c2w, s2w) = ((2.0 * w).cos(), (2.0 * w).sin());
+    let mut mag = 1.0;
+    for q in filters {
+        // e^-jw = cos w - j sin w
+        let nr = q.b0 + q.b1 * cw + q.b2 * c2w;
+        let ni = -(q.b1 * sw + q.b2 * s2w);
+        let dr = 1.0 + q.a1 * cw + q.a2 * c2w;
+        let di = -(q.a1 * sw + q.a2 * s2w);
+        mag *= ((nr * nr + ni * ni) / (dr * dr + di * di)).sqrt();
+    }
+    mag
+}
+
+// IEC 61672 pole frequencies, shared by both curves.
+const W_F1: f64 = 20.598997;
+const W_F2: f64 = 107.65265;
+const W_F3: f64 = 737.86223;
+const W_F4: f64 = 12194.217;
+
+fn scaled(mut filters: Vec<Biquad>, fs: f64) -> Vec<Biquad> {
+    let g = cascade_gain(&filters, fs, 1000.0);
+    if g > 0.0 {
+        let f = &mut filters[0];
+        f.b0 /= g;
+        f.b1 /= g;
+        f.b2 /= g;
+    }
+    filters
+}
+
+/// A-weighting: what hearing-damage limits, noise ordinances and handheld
+/// meters all speak. Models the ear at quiet levels, so it discards most of
+/// the low end — −26 dB at 63 Hz, −39 dB at 31.5 Hz.
+fn a_weighting(fs: f64) -> Vec<Biquad> {
+    use std::f64::consts::PI;
+    let (w1, w2, w3, w4) = (
+        2.0 * PI * W_F1,
+        2.0 * PI * W_F2,
+        2.0 * PI * W_F3,
+        2.0 * PI * W_F4,
+    );
+    scaled(
+        vec![
+            // s^2 / (s + w1)^2
+            bilinear([0.0, 0.0, 1.0], [w1 * w1, 2.0 * w1, 1.0], fs, W_F1),
+            // s^2 / ((s + w2)(s + w3)) — prewarped at the geometric mean of
+            // its two poles, which is where the section actually bends.
+            bilinear([0.0, 0.0, 1.0], [w2 * w3, w2 + w3, 1.0], fs, (W_F2 * W_F3).sqrt()),
+            // w4^2 / (s + w4)^2
+            bilinear([w4 * w4, 0.0, 0.0], [w4 * w4, 2.0 * w4, 1.0], fs, W_F4),
+        ],
+        fs,
+    )
+}
+
+/// C-weighting: nearly flat across the band, so it keeps the low-frequency
+/// energy A throws away. On its own it is not a safety number; measured
+/// alongside A it is a mix diagnostic, because the gap between the two is the
+/// size of the bottom end.
+fn c_weighting(fs: f64) -> Vec<Biquad> {
+    use std::f64::consts::PI;
+    let (w1, w4) = (2.0 * PI * W_F1, 2.0 * PI * W_F4);
+    scaled(
+        vec![
+            bilinear([0.0, 0.0, 1.0], [w1 * w1, 2.0 * w1, 1.0], fs, W_F1),
+            bilinear([w4 * w4, 0.0, 0.0], [w4 * w4, 2.0 * w4, 1.0], fs, W_F4),
+        ],
+        fs,
+    )
+}
+
+/// Which curve the SPL readout is measured through.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FreqWeight {
+    /// Unweighted. Honest, and comparable to nothing.
+    Z,
+    A,
+    C,
+}
+
+impl FreqWeight {
+    pub fn parse(s: &str) -> FreqWeight {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "z" | "none" | "flat" => FreqWeight::Z,
+            "c" => FreqWeight::C,
+            // A is the default on purpose: it is the only one of the three
+            // that can be compared to a published limit.
+            _ => FreqWeight::A,
+        }
+    }
+}
+
+/// Runs both weighting curves over the mono measurement mix, so the A reading,
+/// the C reading and the gap between them are all available at once.
+struct Weighter {
+    a: Vec<Biquad>,
+    c: Vec<Biquad>,
+}
+
+impl Weighter {
+    fn new(fs: f64) -> Self {
+        Self { a: a_weighting(fs), c: c_weighting(fs) }
+    }
+    #[inline]
+    fn process(&mut self, x: f64) -> (f64, f64) {
+        let mut a = x;
+        for q in self.a.iter_mut() {
+            a = q.process(a);
+        }
+        let mut c = x;
+        for q in self.c.iter_mut() {
+            c = q.process(c);
+        }
+        (a, c)
+    }
+}
+
 /// Exponential time weighting, the way a sound level meter does it (IEC 61672).
 ///
 /// ProDeck used to report the plain RMS of each ~83 ms emit window, restarted
@@ -394,9 +543,12 @@ pub fn start_audio_capture(
         )
     };
     let overflow_tx = state.overflow_tx.clone();
-    let weighting = {
+    let (weighting, freq_weighting) = {
         let g = settings.lock().unwrap_or_else(|p| p.into_inner());
-        TimeWeight::parse(&g.spl_time_weighting)
+        (
+            TimeWeight::parse(&g.spl_time_weighting),
+            FreqWeight::parse(&g.spl_freq_weighting),
+        )
     };
 
     let inner = state.inner().clone();
@@ -414,8 +566,16 @@ pub fn start_audio_capture(
         let app_cb = app2.clone();
         let mut emit_frames: usize = 0;
         let mut emit_sumsq: f32 = 0.0;
-        // The number the SPL readout and the service reports are built on.
+        // The number the SPL readout and the service reports are built on —
+        // one per curve, because A and C are both wanted at once: A is the
+        // reading that compares to a published limit, and the gap between them
+        // is the size of the low end, which A alone cannot show.
         let mut weighted = WeightedLevel::new();
+        let mut weighted_a = WeightedLevel::new();
+        let mut weighted_c = WeightedLevel::new();
+        let mut weighter = Weighter::new(sample_rate as f64);
+        let mut sumsq_a: f64 = 0.0;
+        let mut sumsq_c: f64 = 0.0;
         let mut emit_peak: f32 = 0.0;
         // Per-channel peak over the emit window — lets the channel-routing UI
         // show which inputs actually carry signal.
@@ -465,6 +625,11 @@ pub fn start_audio_capture(
                                 acc / measure_idx.len() as f32
                             };
                             emit_sumsq += s * s;
+                            // Both weighting curves run over the same mono
+                            // measurement mix the unweighted level uses.
+                            let (wa, wc) = weighter.process(s as f64);
+                            sumsq_a += wa * wa;
+                            sumsq_c += wc * wc;
                             if s.abs() > emit_peak {
                                 emit_peak = s.abs();
                             }
@@ -520,11 +685,16 @@ pub fn start_audio_capture(
                             // Time-weighted, so the SPL figure behaves like the
                             // handheld meter it gets calibrated against instead
                             // of swaying several dB on a steady source.
-                            let slow = weighted.push(
-                                mean_square,
-                                emit_frames as f64 / sr as f64,
-                                weighting,
-                            ) as f32;
+                            let dt = emit_frames as f64 / sr as f64;
+                            let n = emit_frames as f64;
+                            let slow_z = weighted.push(mean_square, dt, weighting) as f32;
+                            let slow_a = weighted_a.push(sumsq_a / n, dt, weighting) as f32;
+                            let slow_c = weighted_c.push(sumsq_c / n, dt, weighting) as f32;
+                            let slow = match freq_weighting {
+                                FreqWeight::Z => slow_z,
+                                FreqWeight::A => slow_a,
+                                FreqWeight::C => slow_c,
+                            };
                             // Latest level for pull-style readers (the Stream
                             // Deck SPL key polls the gateway; it can't ride
                             // the event stream).
@@ -543,9 +713,14 @@ pub fn start_audio_capture(
                                         // Unweighted, for bar meters that should
                                         // move with the music.
                                         "rms": rms.min(1.0),
-                                        // Time-weighted; what SPL, tracking and
-                                        // the alerts read.
+                                        // Time-weighted through the configured
+                                        // curve; what SPL, tracking and the
+                                        // alerts read.
                                         "slow": slow.min(1.0),
+                                        // Both curves, always, so the readout
+                                        // can show C-A without a second pass.
+                                        "slowA": slow_a.min(1.0),
+                                        "slowC": slow_c.min(1.0),
                                         "peak": emit_peak.min(1.0)
                                     }),
                                 )
@@ -556,6 +731,8 @@ pub fn start_audio_capture(
                             app_cb.emit("audio:channels", &chans).ok();
                             emit_frames = 0;
                             emit_sumsq = 0.0;
+                            sumsq_a = 0.0;
+                            sumsq_c = 0.0;
                             emit_peak = 0.0;
                             for p in chan_peak.iter_mut() {
                                 *p = 0.0;
@@ -778,5 +955,97 @@ mod weighting_tests {
         assert_eq!(TimeWeight::parse("slow"), TimeWeight::Slow);
         assert_eq!(TimeWeight::parse(""), TimeWeight::Slow);
         assert_eq!(TimeWeight::parse("nonsense"), TimeWeight::Slow);
+    }
+}
+
+#[cfg(test)]
+mod weighting_curve_tests {
+    use super::{a_weighting, c_weighting, cascade_gain};
+
+    fn db(filters: &[super::Biquad], fs: f64, f: f64) -> f64 {
+        20.0 * cascade_gain(filters, fs, f).log10()
+    }
+
+    /// The published IEC 61672 A- and C-weighting tables. If the filter design
+    /// drifts, every SPL number ProDeck reports drifts with it — silently,
+    /// because a weighted reading looks exactly as plausible as a correct one.
+    ///
+    /// Tolerances here are what this design actually achieves, not the
+    /// standard's class-1 allowance, so a regression is caught while still
+    /// well inside spec. Accuracy is 0.16 dB or better everywhere below 2 kHz
+    /// at both 44.1 and 48 kHz; it loosens above that and falls apart near
+    /// Nyquist (16 kHz reads several dB low), which is inherent to designing
+    /// these curves by bilinear transform and irrelevant to a broadband SPL
+    /// reading — a worship mix has almost no energy up there, and what there
+    /// is, A-weighting is discarding anyway.
+    #[test]
+    fn a_weighting_matches_the_standard() {
+        for fs in [44100.0, 48000.0] {
+            let f = a_weighting(fs);
+            for (hz, want, tol) in [
+                (31.5, -39.4, 0.25),
+                (63.0, -26.2, 0.15),
+                (125.0, -16.1, 0.2),
+                (250.0, -8.6, 0.2),
+                (500.0, -3.2, 0.15),
+                (1000.0, 0.0, 0.02),
+                (2000.0, 1.2, 0.15),
+                (4000.0, 1.0, 0.4),
+                // Class 1 allows +1.5/-2.5 dB here; we are inside 0.8.
+                (8000.0, -1.1, 0.9),
+            ] {
+                let got = db(&f, fs, hz);
+                assert!(
+                    (got - want).abs() < tol,
+                    "A at {hz} Hz / {fs}: got {got:.2} dB, table says {want} (±{tol})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn c_weighting_matches_the_standard() {
+        for fs in [44100.0, 48000.0] {
+            let f = c_weighting(fs);
+            for (hz, want, tol) in [
+                (31.5, -3.0, 0.15),
+                (63.0, -0.8, 0.15),
+                (125.0, -0.2, 0.05),
+                (1000.0, 0.0, 0.02),
+                (4000.0, -0.8, 0.4),
+                (8000.0, -3.0, 0.9),
+            ] {
+                let got = db(&f, fs, hz);
+                assert!(
+                    (got - want).abs() < tol,
+                    "C at {hz} Hz / {fs}: got {got:.2} dB, table says {want} (±{tol})"
+                );
+            }
+        }
+    }
+
+    /// The whole reason C is measured alongside A: it keeps the bottom end.
+    /// A kick drum's fundamental reads ~25 dB lower through A than through C,
+    /// which is why a bass-heavy mix can look fine on an A-weighted meter.
+    #[test]
+    fn c_minus_a_is_the_size_of_the_bottom_end() {
+        let fs = 48000.0;
+        let (a, c) = (a_weighting(fs), c_weighting(fs));
+        let spread = db(&c, fs, 63.0) - db(&a, fs, 63.0);
+        assert!(spread > 24.0, "C-A at 63 Hz should be large, got {spread:.1} dB");
+        // And essentially nothing where both are flat.
+        let mid = db(&c, fs, 1000.0) - db(&a, fs, 1000.0);
+        assert!(mid.abs() < 0.1, "C-A at 1 kHz should vanish, got {mid:.2} dB");
+    }
+
+    #[test]
+    fn both_curves_are_unity_at_the_reference_frequency() {
+        // A weighting curve that is not 0 dB at 1 kHz shifts every reading by
+        // a constant, which calibration would silently absorb and then be
+        // wrong by the same amount at every other frequency.
+        for fs in [44100.0, 48000.0] {
+            assert!((cascade_gain(&a_weighting(fs), fs, 1000.0) - 1.0).abs() < 0.001);
+            assert!((cascade_gain(&c_weighting(fs), fs, 1000.0) - 1.0).abs() < 0.001);
+        }
     }
 }

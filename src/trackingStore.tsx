@@ -19,6 +19,15 @@ interface ItemStat {
   splPeak: number; // dB SPL
   splSum: number;
   splCount: number;
+  /**
+   * Sum of 10^(dB/10) — the ENERGY, not the decibels. Averaging dB directly
+   * (splSum/splCount) answers "what did the needle read on average", which is
+   * not the same question as "how much sound was there": a song that sits at
+   * 88 and peaks at 98 for a chorus averages the same as one held at 90, and
+   * they are not the same exposure. LAeq is the energy mean, and it is the
+   * figure every hearing-exposure limit is written against.
+   */
+  splEnergy?: number;
   startedAt: number | null; // ms epoch while currently live
 }
 
@@ -30,6 +39,8 @@ export interface TrackedItem {
   actual: number;
   splPeak: number;
   splAvg: number;
+  /** Energy-average level (LAeq) over the bucket — the exposure figure. */
+  splLeq: number;
   live: boolean;
   tracked: boolean;
   /** Epoch-ms the live stretch began; null when not live. Lets a widget count
@@ -129,6 +140,15 @@ function bucketRows(bucket: Record<string, ItemStat>): TrackedItem[] {
     startedAt: s?.startedAt ?? null,
     splPeak: s && s.splCount ? s.splPeak : -100,
     splAvg: s && s.splCount ? s.splSum / s.splCount : -100,
+    // Older buckets carry no energy sum; fall back to the arithmetic mean
+    // rather than reporting a confident -100 for every service already
+    // recorded.
+    splLeq:
+      s && s.splCount
+        ? s.splEnergy
+          ? 10 * Math.log10(s.splEnergy / s.splCount)
+          : s.splSum / s.splCount
+        : -100,
     live: false,
     tracked: !!s && s.actual > 0,
   });
@@ -344,6 +364,7 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
           splPeak: -100,
           splSum: 0,
           splCount: 0,
+          splEnergy: 0,
           startedAt: now,
         };
       }
@@ -387,6 +408,7 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
           const peakDb = toDbfs(Math.max(levelRef.current, peakRef.current)) + calRef.current;
           if (peakDb > stat.splPeak) stat.splPeak = peakDb;
           stat.splSum += db;
+          stat.splEnergy = (stat.splEnergy ?? 0) + Math.pow(10, db / 10);
           stat.splCount += 1;
         }
       }
@@ -450,6 +472,12 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
           actual,
           splPeak: s && s.splCount ? s.splPeak : -100,
           splAvg: s && s.splCount ? s.splSum / s.splCount : -100,
+          splLeq:
+            s && s.splCount
+              ? s.splEnergy
+                ? 10 * Math.log10(s.splEnergy / s.splCount)
+                : s.splSum / s.splCount
+              : -100,
           live,
           tracked: !!s && (s.actual > 0 || s.startedAt != null),
         };

@@ -30,6 +30,11 @@ pub struct Settings {
     /// set to) or "fast" (125 ms). Matching the handheld is what makes a
     /// calibration figure repeatable.
     pub spl_time_weighting: String,
+    /// Frequency weighting for the SPL readout: "a" (default), "c" or "z".
+    /// A is the only one comparable to a published exposure limit, which is
+    /// why it is the default; C is measured alongside it regardless, because
+    /// C minus A is the size of the low end.
+    pub spl_freq_weighting: String,
     /// Browser access: serve the dashboards over HTTP on the LAN.
     pub web_enabled: bool,
     pub web_port: u16,
@@ -223,6 +228,7 @@ impl Default for Settings {
             pco_client_id: None,
             spl_calibration: 100.0,
             spl_time_weighting: "slow".into(),
+            spl_freq_weighting: "a".into(),
             web_enabled: false,
             web_port: 8088,
             web_password: String::new(),

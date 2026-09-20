@@ -684,6 +684,23 @@ select.input {
   color: #1f9d55;
   opacity: 1;
 }
+
+/* C−A beside the SPL number: the low-end check, in the one place someone is
+   already looking at the level. */
+.spl-spread {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(127, 127, 127, 0.16);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+.spl-spread.hot {
+  background: rgba(180, 51, 42, 0.18);
+  color: #d86a5f;
+  opacity: 1;
+}
 .discovered {
   display: flex;
   flex-direction: column;

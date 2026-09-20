@@ -686,6 +686,25 @@ export function SettingsPage() {
                 </span>
               </div>
               <label className="field">
+                <span>SPL frequency weighting</span>
+                <select
+                  className="input"
+                  value={form.spl_freq_weighting || "a"}
+                  onChange={(e) => set("spl_freq_weighting", e.target.value)}
+                >
+                  <option value="a">A — matches exposure limits and handheld meters</option>
+                  <option value="c">C — keeps the low end</option>
+                  <option value="z">Z — unweighted</option>
+                </select>
+                <span className="hint">
+                  A is what hearing-damage limits and noise rules are written in, so it's the
+                  number that can be compared to anything. C is measured alongside it either way —
+                  the gap between them is the size of your bottom end.
+                  <strong> Changing this means recalibrating</strong>, since the offset depends on
+                  the curve.
+                </span>
+              </label>
+              <label className="field">
                 <span>SPL time weighting</span>
                 <select
                   className="input"

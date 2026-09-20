@@ -37,6 +37,42 @@ numbers below are the ones shown in **Settings → Software Update**.
 
 ## Unreleased
 
+### SPL now reads in dB(A), and the calibration will finally hold
+
+Three fixes to the sound level meter, which together are why calibrating it
+against a handheld never landed in the same place twice.
+
+**It now averages like a sound level meter.** The reading was smoothed with
+peak-meter ballistics — quick to rise, slow to fall, and applied to decibels.
+A sound level meter integrates the energy with one even time constant. On pink
+noise the difference is exactly the symptom: the number sat high and visibly
+swayed while the handheld beside it sat still. **Settings → Audio → SPL time
+weighting** picks Slow (1 s, what most handhelds are on) or Fast.
+
+**It can read A-weighted, and does by default.** A-weighting is what
+hearing-exposure limits, noise rules and handheld meters all speak, so it's the
+only reading that can be compared to anything. The filters match the published
+IEC 61672 table to better than 0.2 dB across everything below 2 kHz.
+
+**C−A is shown next to the level.** A-weighting deliberately ignores most of
+the bottom end, so a mix can read a respectable 92 dB(A) while the room takes
+105 dB(C) — and the low end is what the complaints are usually about. The gap
+between the two curves is the size of your bottom end: roughly 10–15 dB is a
+balanced full-range mix, consistently above that means the bass is running
+away. It turns red past 15.
+
+Service reports also now record **LAeq** — the energy average — beside the
+existing average and peak. A song that sits at 88 and peaks at 98 for one
+chorus is a very different exposure from one held at 90, and a plain average of
+decibels calls them the same.
+
+> **You need to recalibrate once.** Any existing calibration figure was set
+> against the old swaying, unweighted number and will be wrong. Put pink noise
+> up, set your handheld to A and Slow, match those in Settings → Audio, then
+> open Calibrate and let it sit a few seconds before typing the reading — it
+> now averages the whole time the box is open instead of snapshotting one
+> instant.
+
 ### Planning Center: press Connect instead of hunting for a token
 
 Connecting Planning Center was eight steps through a developer site most

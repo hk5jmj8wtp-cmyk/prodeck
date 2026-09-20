@@ -275,6 +275,8 @@ export interface Settings {
   spl_calibration: number;
   /** Sound-level-meter time weighting for SPL: "slow" (1 s) or "fast" (125 ms). */
   spl_time_weighting: string;
+  /** Frequency weighting for SPL: "a", "c" or "z". */
+  spl_freq_weighting: string;
   web_enabled: boolean;
   web_port: number;
   web_password: string;

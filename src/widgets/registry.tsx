@@ -1509,8 +1509,10 @@ function splZoneColor(spl: number, greenMax: number, yellowMax: number): string 
 /* ----------------------------------------------------------- SPL + RTA combined */
 
 function AudioMeterWidget({ widget, editing, update }: WidgetProps) {
-  const { audioDb, audioPeakDb, audioRunning, splCalibration, setSplCalibration } =
-    useProDeck();
+  const {
+    audioDb, audioDbA, audioDbC, audioPeakDb, audioRunning,
+    splCalibration, setSplCalibration, settings,
+  } = useProDeck();
   const [inputs, setInputs] = useState<string[]>([]);
   const [bands, setBands] = useState<number[]>([]);
   const [hold, setHold] = useState(-100);
@@ -1611,6 +1613,20 @@ function AudioMeterWidget({ widget, editing, update }: WidgetProps) {
   const fill = Math.max(0, Math.min(100, ((dbfs + 60) / 60) * 100));
   const peakPct = Math.max(0, Math.min(100, ((peakDbfs + 60) / 60) * 100));
   const spl = Math.round(dbfs + cal);
+  // C minus A, the practitioner's low-end check. Both readings share the same
+  // calibration offset, so it cancels and the gap is meaningful even on a
+  // booth that has never been calibrated. Roughly 10-15 dB is a balanced
+  // full-range mix; consistently above that is a bottom end running away.
+  const spread =
+    audioDbA > -100 && audioDbC > -100 ? Math.round(audioDbC - audioDbA) : null;
+  // Say which curve the number is, because "94 dB" means different things
+  // through A and through C and the difference is the whole point.
+  const weightLabel =
+    settings?.spl_freq_weighting === "c"
+      ? "dB(C) SPL"
+      : settings?.spl_freq_weighting === "z"
+        ? "dB SPL (unweighted)"
+        : "dB(A) SPL";
   function applyCal() {
     const m = parseFloat(measured);
     if (!Number.isFinite(m) || !audioRunning) return;
@@ -1638,7 +1654,15 @@ function AudioMeterWidget({ widget, editing, update }: WidgetProps) {
           >
             {audioRunning ? spl : "--"}
           </span>
-          <span className="spl-unit">dB SPL</span>
+          <span className="spl-unit">{weightLabel}</span>
+          {spread !== null && audioRunning && (
+            <span
+              className={`spl-spread ${spread > 15 ? "hot" : ""}`}
+              title="C minus A — how much of the level is low end. Roughly 10-15 dB is a balanced full-range mix; above that the bottom is running away."
+            >
+              C−A {spread}
+            </span>
+          )}
         </div>
         <div className="am-actions" onMouseDown={(e) => e.stopPropagation()}>
           {audioRunning && (

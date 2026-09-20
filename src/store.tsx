@@ -67,6 +67,10 @@ interface Store {
   // Smoothed, floored dBFS for display — see lib/audioMeter. Use these for any
   // readout or bar; the raw linear levels above jitter far too much to show.
   audioDb: number;
+  /** A-weighted level, dBFS. Add splCalibration for dB(A). */
+  audioDbA: number;
+  /** C-weighted level, dBFS. */
+  audioDbC: number;
   audioPeakDb: number;
   audioRunning: boolean;
   lufs: { m: number; s: number; i: number; peak: number } | null;
@@ -95,6 +99,10 @@ export function ProDeckProvider({ children }: { children: ReactNode }) {
   const [audioLevel, setAudioLevel] = useState(0);
   const [audioPeak, setAudioPeak] = useState(0);
   const [audioDb, setAudioDb] = useState(DB_FLOOR);
+  // Both curves, always measured. C minus A is the size of the bottom end —
+  // the thing an A-weighted reading is deaf to and complaints are made of.
+  const [audioDbA, setAudioDbA] = useState(DB_FLOOR);
+  const [audioDbC, setAudioDbC] = useState(DB_FLOOR);
   const [audioPeakDb, setAudioPeakDb] = useState(DB_FLOOR);
   const [audioRunning, setAudioRunning] = useState(false);
   const [lufs, setLufs] = useState<{ m: number; s: number; i: number; peak: number } | null>(
@@ -226,7 +234,9 @@ export function ProDeckProvider({ children }: { children: ReactNode }) {
     );
     sub<string>("caption:status", (s) => setCaptionStatus(s));
 
-    sub<{ rms: number; peak: number; slow?: number }>("audio:level", (m) => {
+    sub<{ rms: number; peak: number; slow?: number; slowA?: number; slowC?: number }>(
+      "audio:level",
+      (m) => {
       // Freshness IS the "running" signal: a web client that joins after the
       // booth started capture never sees the one-shot audio:started event
       // reliably (phones showed "not measuring" against a live meter). Any
@@ -252,12 +262,17 @@ export function ProDeckProvider({ children }: { children: ReactNode }) {
       if (typeof m.slow === "number") setAudioDb(toDbfs(m.slow));
       else setAudioDb((p) => ballisticsDt(p, toDbfs(m.rms), dt));
       setAudioPeakDb((p) => ballisticsDt(p, toDbfs(m.peak), dt));
-    });
+      if (typeof m.slowA === "number") setAudioDbA(toDbfs(m.slowA));
+      if (typeof m.slowC === "number") setAudioDbC(toDbfs(m.slowC));
+      },
+    );
     sub<number>("audio:started", () => setAudioRunning(true));
     sub("audio:stopped", () => {
       lastLevelAt.current = 0;
       setAudioRunning(false);
       setAudioDb(DB_FLOOR);
+      setAudioDbA(DB_FLOOR);
+      setAudioDbC(DB_FLOOR);
       setAudioPeakDb(DB_FLOOR);
       setLufs(null);
     });
@@ -394,6 +409,8 @@ export function ProDeckProvider({ children }: { children: ReactNode }) {
     audioLevel,
     audioPeak,
     audioDb,
+    audioDbA,
+    audioDbC,
     audioPeakDb,
     audioRunning,
     lufs,
