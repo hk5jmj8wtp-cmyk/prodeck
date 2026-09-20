@@ -316,6 +316,7 @@ const SETTINGS_OVERLAY: Record<string, unknown> = {
   pco_secret: "demo",
   pco_client_id: null,
   audio_mic_channels: { "1": 5, "2": 6, "3": 7 },
+  spl_time_weighting: "slow",
   web_enabled: true,
   web_port: 8088,
   web_invite_token: "demotoken",

@@ -226,7 +226,7 @@ export function ProDeckProvider({ children }: { children: ReactNode }) {
     );
     sub<string>("caption:status", (s) => setCaptionStatus(s));
 
-    sub<{ rms: number; peak: number }>("audio:level", (m) => {
+    sub<{ rms: number; peak: number; slow?: number }>("audio:level", (m) => {
       // Freshness IS the "running" signal: a web client that joins after the
       // booth started capture never sees the one-shot audio:started event
       // reliably (phones showed "not measuring" against a live meter). Any
@@ -238,10 +238,19 @@ export function ProDeckProvider({ children }: { children: ReactNode }) {
       setAudioRunning(true);
       setAudioLevel(m.rms);
       setAudioPeak(m.peak);
-      // Smooth in the dB domain at the source, using the REAL time between
-      // frames — desktop gets ~12/s, throttled web clients ~5/s, and both must
-      // settle identically instead of phones spiking on sparse samples.
-      setAudioDb((p) => ballisticsDt(p, toDbfs(m.rms), dt));
+      // SPL rides the backend's time-weighted level, which integrates the
+      // MEAN SQUARE with one symmetric time constant — what IEC 61672 calls
+      // Slow or Fast, and what the handheld meter this gets calibrated
+      // against is doing. Applying the ballistics below to it as well would
+      // smooth it twice and drag it behind the room.
+      //
+      // The ballistics stay for the fallback, and for the peak meter where
+      // fast-attack/slow-release is the right behaviour. They are NOT sound
+      // level meter weighting: asymmetric, and applied to dB rather than to
+      // mean square, which both biases a random signal like pink noise high
+      // and leaves it visibly swaying.
+      if (typeof m.slow === "number") setAudioDb(toDbfs(m.slow));
+      else setAudioDb((p) => ballisticsDt(p, toDbfs(m.rms), dt));
       setAudioPeakDb((p) => ballisticsDt(p, toDbfs(m.peak), dt));
     });
     sub<number>("audio:started", () => setAudioRunning(true));

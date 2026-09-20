@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useRef,
   useState,
   type ComponentType,
   type MouseEvent as ReactMouseEvent,
@@ -1515,6 +1516,11 @@ function AudioMeterWidget({ widget, editing, update }: WidgetProps) {
   const [hold, setHold] = useState(-100);
   const [calibrating, setCalibrating] = useState(false);
   const [measured, setMeasured] = useState("");
+  // Readings collected while the calibration box is open. A handheld meter is
+  // read as a settled number over a few seconds; taking ProDeck's value from
+  // the single instant the button was pressed is what made two calibrations of
+  // the same pink noise land in different places.
+  const calSamples = useRef<number[]>([]);
   const device: string | null = widget.config.device ?? null;
   const cal = splCalibration;
   const greenMax = widget.config.greenMax ?? 90;
@@ -1532,6 +1538,13 @@ function AudioMeterWidget({ widget, editing, update }: WidgetProps) {
 
   const dbfs = audioDb;
   const peakDbfs = audioPeakDb;
+  useEffect(() => {
+    if (!calibrating) {
+      calSamples.current = [];
+      return;
+    }
+    if (dbfs > -100) calSamples.current.push(dbfs);
+  }, [calibrating, dbfs]);
   useEffect(() => {
     if (!audioRunning) {
       setHold(-100);
@@ -1600,11 +1613,19 @@ function AudioMeterWidget({ widget, editing, update }: WidgetProps) {
   const spl = Math.round(dbfs + cal);
   function applyCal() {
     const m = parseFloat(measured);
-    if (Number.isFinite(m) && audioRunning) {
-      setSplCalibration(Math.round((m - dbfs) * 10) / 10);
-      setCalibrating(false);
-      setMeasured("");
-    }
+    if (!Number.isFinite(m) || !audioRunning) return;
+    // Average the level over the whole time the box was open, in the mean-square
+    // domain rather than in dB — averaging decibels weights the quiet moments
+    // too heavily and lands low.
+    const xs = calSamples.current;
+    const ref =
+      xs.length > 0
+        ? 10 * Math.log10(xs.reduce((a: number, d: number) => a + Math.pow(10, d / 10), 0) / xs.length)
+        : dbfs;
+    setSplCalibration(Math.round((m - ref) * 10) / 10);
+    setCalibrating(false);
+    setMeasured("");
+    calSamples.current = [];
   }
 
   return (

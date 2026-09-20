@@ -13,8 +13,20 @@
 //     jitters constantly, because RMS moves between every window.
 //
 // So: clamp to DB_FLOOR, then apply meter ballistics — fast attack so transients
-// still register, slower release so the number settles, the way a hardware SPL
-// meter's time weighting behaves.
+// still register, slower release so the number settles.
+//
+// These are PEAK-PROGRAM-METER ballistics, not sound level meter weighting, and
+// the difference matters for the SPL readout specifically. A sound level meter
+// integrates the MEAN SQUARE with a single SYMMETRIC time constant (IEC 61672:
+// Slow = 1 s, Fast = 125 ms). Asymmetric smoothing of dB values chases peaks up
+// and decays away from them slowly, which on a random signal like pink noise
+// both reads high and visibly sways — so a booth reading calibrated against a
+// steady handheld never settles on the same offset twice.
+//
+// The SPL path therefore uses the backend's time-weighted level (`slow` on
+// audio:level, see WeightedLevel in audio.rs) and skips these. They remain for
+// the peak meter, where this behaviour is correct, and as the fallback when an
+// older booth serves a browser client without the weighted field.
 
 export const DB_FLOOR = -100;
 

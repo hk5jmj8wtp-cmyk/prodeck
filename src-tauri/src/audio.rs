@@ -107,6 +107,67 @@ struct LufsReading {
     peak_db: f64,
 }
 
+/// Exponential time weighting, the way a sound level meter does it (IEC 61672).
+///
+/// ProDeck used to report the plain RMS of each ~83 ms emit window, restarted
+/// from zero every time. On a steady source that number still moves several dB
+/// from window to window, because 83 ms of pink noise is a small sample of a
+/// random signal — so the booth's reading visibly swayed while the handheld
+/// meter beside it sat still, and calibrating one against the other came down
+/// to which instant you happened to read. That is how a calibration figure
+/// ends up 20 dB from where it belongs.
+///
+/// A real meter integrates with a single-pole filter on the MEAN SQUARE (not on
+/// dB, which would weight quiet moments far too heavily). Two standard time
+/// constants: Slow, 1 s, what rooms and music are normally measured on, and
+/// Fast, 125 ms.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TimeWeight {
+    Fast,
+    Slow,
+}
+
+impl TimeWeight {
+    pub fn tau_secs(self) -> f64 {
+        match self {
+            TimeWeight::Fast => 0.125,
+            TimeWeight::Slow => 1.0,
+        }
+    }
+    pub fn parse(s: &str) -> TimeWeight {
+        if s.eq_ignore_ascii_case("fast") { TimeWeight::Fast } else { TimeWeight::Slow }
+    }
+}
+
+/// Running mean-square with exponential decay.
+#[derive(Debug)]
+pub struct WeightedLevel {
+    ms: f64,
+    primed: bool,
+}
+
+impl WeightedLevel {
+    pub fn new() -> Self {
+        Self { ms: 0.0, primed: false }
+    }
+
+    /// Fold in one window's mean square, measured over `dt` seconds.
+    /// Returns the weighted RMS (linear, 0..1).
+    pub fn push(&mut self, mean_square: f64, dt: f64, w: TimeWeight) -> f64 {
+        // First window seeds the average outright. Without this the meter
+        // climbs from silence for a second after capture starts, which reads
+        // as a fault to anyone watching.
+        if !self.primed {
+            self.ms = mean_square;
+            self.primed = true;
+        } else {
+            let alpha = 1.0 - (-dt / w.tau_secs()).exp();
+            self.ms += (mean_square - self.ms) * alpha;
+        }
+        self.ms.max(0.0).sqrt()
+    }
+}
+
 struct LoudnessMeter {
     pre: Biquad,
     rlb: Biquad,
@@ -333,6 +394,10 @@ pub fn start_audio_capture(
         )
     };
     let overflow_tx = state.overflow_tx.clone();
+    let weighting = {
+        let g = settings.lock().unwrap_or_else(|p| p.into_inner());
+        TimeWeight::parse(&g.spl_time_weighting)
+    };
 
     let inner = state.inner().clone();
     let app2 = app.clone();
@@ -349,6 +414,8 @@ pub fn start_audio_capture(
         let app_cb = app2.clone();
         let mut emit_frames: usize = 0;
         let mut emit_sumsq: f32 = 0.0;
+        // The number the SPL readout and the service reports are built on.
+        let mut weighted = WeightedLevel::new();
         let mut emit_peak: f32 = 0.0;
         // Per-channel peak over the emit window — lets the channel-routing UI
         // show which inputs actually carry signal.
@@ -448,11 +515,20 @@ pub fn start_audio_capture(
                         // Emit a metered level ~12x/sec to keep store churn low.
                         emit_frames += frames;
                         if emit_frames >= sr / 12 {
-                            let rms = (emit_sumsq / emit_frames as f32).sqrt();
+                            let mean_square = (emit_sumsq / emit_frames as f32) as f64;
+                            let rms = (mean_square as f32).sqrt();
+                            // Time-weighted, so the SPL figure behaves like the
+                            // handheld meter it gets calibrated against instead
+                            // of swaying several dB on a steady source.
+                            let slow = weighted.push(
+                                mean_square,
+                                emit_frames as f64 / sr as f64,
+                                weighting,
+                            ) as f32;
                             // Latest level for pull-style readers (the Stream
                             // Deck SPL key polls the gateway; it can't ride
                             // the event stream).
-                            LAST_RMS_BITS.store(rms.min(1.0).to_bits(), std::sync::atomic::Ordering::Relaxed);
+                            LAST_RMS_BITS.store(slow.min(1.0).to_bits(), std::sync::atomic::Ordering::Relaxed);
                             LAST_RMS_MS.store(
                                 std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)
@@ -464,7 +540,12 @@ pub fn start_audio_capture(
                                 .emit(
                                     "audio:level",
                                     serde_json::json!({
+                                        // Unweighted, for bar meters that should
+                                        // move with the music.
                                         "rms": rms.min(1.0),
+                                        // Time-weighted; what SPL, tracking and
+                                        // the alerts read.
+                                        "slow": slow.min(1.0),
                                         "peak": emit_peak.min(1.0)
                                     }),
                                 )
@@ -613,4 +694,89 @@ fn compute_bands(buf: &[Complex<f32>], n: usize, sr: u32) -> Vec<f32> {
         out.push(db);
     }
     out
+}
+
+#[cfg(test)]
+mod weighting_tests {
+    use super::{TimeWeight, WeightedLevel};
+
+    /// How far the meter has travelled toward a step input after `windows`
+    /// emit windows of 1/12 s each.
+    fn step_response(w: TimeWeight, windows: usize) -> f64 {
+        let mut m = WeightedLevel::new();
+        let dt = 1.0 / 12.0;
+        // Seed at silence, then step to full scale, so the first window does
+        // not simply prime the average at the target.
+        m.push(0.0, dt, w);
+        let mut rms = 0.0;
+        for _ in 0..windows {
+            rms = m.push(1.0, dt, w);
+        }
+        rms
+    }
+
+    #[test]
+    fn slow_is_one_second_and_fast_is_125ms() {
+        // IEC 61672's two standard time constants. If these drift, every SPL
+        // calibration in the field silently becomes wrong.
+        assert_eq!(TimeWeight::Slow.tau_secs(), 1.0);
+        assert_eq!(TimeWeight::Fast.tau_secs(), 0.125);
+    }
+
+    #[test]
+    fn one_time_constant_reaches_most_of_the_way() {
+        // A single-pole filter covers 1 - 1/e (63.2%) of a step in one tau.
+        // Mean square, so the RMS reading is the square root of that.
+        let ms_expected = 1.0 - (-1.0f64).exp();
+        let slow = step_response(TimeWeight::Slow, 12); // 1 s
+        assert!((slow - ms_expected.sqrt()).abs() < 0.02, "slow {slow}");
+        let fast = step_response(TimeWeight::Fast, 2); // ~167 ms
+        assert!(fast > slow, "fast must react sooner: fast {fast} slow {slow}");
+    }
+
+    #[test]
+    fn a_steady_source_reads_steady() {
+        // The actual complaint: a stable source swaying several dB. Feed it
+        // window-to-window variation of the size 83 ms of pink noise really
+        // produces and check the reading barely moves.
+        let mut m = WeightedLevel::new();
+        let dt = 1.0 / 12.0;
+        let target = 0.01f64; // mean square of a steady tone
+        let mut raw_db: Vec<f64> = vec![];
+        let mut weighted_db: Vec<f64> = vec![];
+        // Deterministic wobble of +/-40% in mean square == +/-1.5 dB raw.
+        for i in 0..120 {
+            let wobble = 1.0 + 0.4 * ((i as f64) * 1.7).sin();
+            let ms = target * wobble;
+            raw_db.push(10.0 * ms.log10());
+            let r = m.push(ms, dt, TimeWeight::Slow);
+            if i > 24 {
+                weighted_db.push(20.0 * r.log10());
+            }
+        }
+        let spread = |v: &[f64]| v.iter().cloned().fold(f64::MIN, f64::max)
+            - v.iter().cloned().fold(f64::MAX, f64::min);
+        let raw = spread(&raw_db);
+        let smooth = spread(&weighted_db);
+        assert!(raw > 2.5, "the raw window should swing: {raw:.2} dB");
+        assert!(smooth < 1.0, "weighted should be steady: {smooth:.2} dB");
+    }
+
+    #[test]
+    fn it_starts_at_the_real_level_not_at_silence() {
+        // Seeding matters: without it the meter climbs out of silence for a
+        // second after capture starts, which reads as a dead feed.
+        let mut m = WeightedLevel::new();
+        let first = m.push(0.25, 1.0 / 12.0, TimeWeight::Slow);
+        assert!((first - 0.5).abs() < 1e-9, "first reading {first}");
+    }
+
+    #[test]
+    fn unknown_weighting_names_fall_back_to_slow() {
+        assert_eq!(TimeWeight::parse("fast"), TimeWeight::Fast);
+        assert_eq!(TimeWeight::parse("Fast"), TimeWeight::Fast);
+        assert_eq!(TimeWeight::parse("slow"), TimeWeight::Slow);
+        assert_eq!(TimeWeight::parse(""), TimeWeight::Slow);
+        assert_eq!(TimeWeight::parse("nonsense"), TimeWeight::Slow);
+    }
 }

@@ -25,6 +25,11 @@ pub struct Settings {
     /// in `pcoauth`. Empty means "use ProDeck's own application".
     pub pco_client_id: Option<String>,
     pub spl_calibration: f64,
+    /// Sound-level-meter time weighting for the SPL readout: "slow" (1 s, what
+    /// rooms and music are normally measured on, and what a handheld is usually
+    /// set to) or "fast" (125 ms). Matching the handheld is what makes a
+    /// calibration figure repeatable.
+    pub spl_time_weighting: String,
     /// Browser access: serve the dashboards over HTTP on the LAN.
     pub web_enabled: bool,
     pub web_port: u16,
@@ -217,6 +222,7 @@ impl Default for Settings {
             pco_secret: None,
             pco_client_id: None,
             spl_calibration: 100.0,
+            spl_time_weighting: "slow".into(),
             web_enabled: false,
             web_port: 8088,
             web_password: String::new(),

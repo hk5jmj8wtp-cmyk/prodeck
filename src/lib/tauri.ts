@@ -273,6 +273,8 @@ export interface Settings {
   /** Vocal-mic watch: mic number -> 1-based audio input channel. */
   audio_mic_channels: Record<string, number>;
   spl_calibration: number;
+  /** Sound-level-meter time weighting for SPL: "slow" (1 s) or "fast" (125 ms). */
+  spl_time_weighting: string;
   web_enabled: boolean;
   web_port: number;
   web_password: string;

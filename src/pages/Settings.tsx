@@ -685,6 +685,22 @@ export function SettingsPage() {
                   measurement mic.)
                 </span>
               </div>
+              <label className="field">
+                <span>SPL time weighting</span>
+                <select
+                  className="input"
+                  value={form.spl_time_weighting || "slow"}
+                  onChange={(e) => set("spl_time_weighting", e.target.value)}
+                >
+                  <option value="slow">Slow — 1 s (matches most handheld meters)</option>
+                  <option value="fast">Fast — 125 ms</option>
+                </select>
+                <span className="hint">
+                  How long the SPL reading averages over, the way a sound level meter does it.
+                  Set this to whatever your handheld is on before you calibrate — the two have to
+                  match or the offset you land on won't hold.
+                </span>
+              </label>
               <div className="field wide">
                 <span>Vocal mic channels</span>
                 <div className="mic-map">
