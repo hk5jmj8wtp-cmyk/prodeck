@@ -3836,7 +3836,7 @@ dependencies = [
 
 [[package]]
 name = "prodeck"
-version = "0.9.85"
+version = "0.9.86"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

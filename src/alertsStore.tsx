@@ -11,6 +11,7 @@ import { useProDeck } from "./store";
 import { usePco , isDeclined } from "./pcoStore";
 import { useChecklists } from "./checklistStore";
 import { avantisState, on } from "./lib/tauri";
+import { describeAlert, hasSignal, micAlerts, micPhase, type WatchedMic } from "./lib/micCheck";
 
 // ---------------------------------------------------------------------------
 // System health + smart alerts. One place that watches every subsystem the
@@ -47,6 +48,13 @@ export interface AlertConfig {
   /// A person is scheduled on a mic, the service window is live, and that
   /// mic's desk channel is muted.
   micMuted: boolean;
+  /// A scheduled mic is OPEN at the desk but carrying no signal — a dead
+  /// battery, an unplugged XLR, a capsule that failed. `micMuted` cannot see
+  /// any of those: the channel is unmuted, so the desk believes it is fine.
+  /// Needs each watched mic routed to its own channel on the booth's audio
+  /// input (Settings → Audio), because Allen & Heath's control protocol
+  /// carries no metering.
+  micSilent: boolean;
 }
 
 // How long a failed TapLink push keeps raising an alert. Long enough to be
@@ -66,6 +74,7 @@ const DEFAULT_CONFIG: AlertConfig = {
   ppDisconnect: true,
   tapPushFail: true,
   micMuted: true,
+  micSilent: true,
 };
 
 const CFG_KEY = "prodeck.alertConfig";
@@ -138,6 +147,20 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
   // armed it forever — so the alarm needs signal within this window.
   const SIGNAL_RECENT_MS = 10 * 60_000;
   const lastSignalAt = useRef<number | null>(null);
+
+  // When each input channel last carried signal, for the per-mic watch. Kept
+  // in a ref because `audio:channels` arrives several times a second and none
+  // of it belongs on the render path — the 1 Hz detector below reads it.
+  const chanLastSound = useRef<Map<number, number>>(new Map());
+  useEffect(() => {
+    const un = on<number[]>("audio:channels", (peaks) => {
+      const now = Date.now();
+      for (let i = 0; i < peaks.length; i++) {
+        if (hasSignal(peaks[i])) chanLastSound.current.set(i + 1, now);
+      }
+    });
+    return () => void un.then((f) => f());
+  }, []);
 
   // Per-source NDI heartbeats from the backend.
   useEffect(() => {
@@ -313,6 +336,52 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
             });
           }
         }
+
+      // The same question the mute check asks, for the failure it cannot see.
+      // A muted channel is somebody's decision; an OPEN channel with nothing
+      // coming down it is a flat battery, a pulled XLR or a dead capsule, and
+      // the desk has no idea — its meters are not on the wire ProDeck can
+      // read, which is why each watched mic is routed to its own input
+      // channel instead.
+      //
+      // Two moments only, both asked for by name: ninety seconds before the
+      // service, which is long enough to walk to the stage and swap a
+      // battery; and while a song is live. Outside those, a quiet mic is just
+      // a quiet mic.
+      const micChans = (plRef.current.settings?.audio_mic_channels ?? {}) as Record<string, number>;
+      if (cfg.enabled && cfg.micSilent && Object.keys(micChans).length) {
+        const liveItem = (pc.items ?? []).find((i: any) => i.id === pc.liveItemId);
+        const serviceStartTs =
+          pc.serviceTimes?.find((t: any) => t.id === pc.selectedServiceTimeId)?.ts || null;
+        const phase = micPhase(serviceStartTs, liveItem?.type === "song", now);
+
+        // Who is on each mic today, from the plan — not from the mic map,
+        // which lists every mic the building owns including the spares.
+        const person: Record<string, string> = {};
+        for (const m of pc.team) {
+          if (isDeclined(m.status)) continue;
+          const mic = pc.micFor(m.id, m.position).mic;
+          if (mic) person[mic] = m.name;
+        }
+
+        const watched: WatchedMic[] = Object.entries(micChans).map(([mic, channel]) => ({
+          mic,
+          channel,
+          person: person[mic],
+          // Muted is already the other alert's job. Excluding it here keeps a
+          // deliberately muted mic from raising two alarms that say different
+          // things about the same channel.
+          muted: avantisMutes.current[pc.micDeskMap[mic] ?? ""] === true,
+          lastSoundMs: chanLastSound.current.get(channel) ?? 0,
+        }));
+
+        for (const a of micAlerts(watched, phase, now)) {
+          active.set(`mic-silent:${a.mic}`, {
+            severity: phase === "worship" ? "crit" : "warn",
+            message: describeAlert(a) + (phase === "precheck" ? " — service starts in under two minutes" : ""),
+          });
+        }
+      }
 
         // Per-song, as the service progresses. The live item follows BOTH
         // drivers — PCO Live and ProPresenter (Follow Pro matches the active

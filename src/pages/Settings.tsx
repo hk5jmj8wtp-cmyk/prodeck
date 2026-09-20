@@ -79,6 +79,9 @@ import { usePco , isDeclined } from "../pcoStore";
 
 export function SettingsPage() {
   const { settings, refreshSettings, midiLog, oscLog } = useProDeck();
+  // Mic numbers come from the Planning Center page's own count, so the list
+  // below uses the same numbering as the mic assignments and the desk map.
+  const { micCount } = usePco();
   const { config: alertCfg, setConfig: setAlertCfg } = useAlerts();
   const relay = useRelay();
   const upd = useUpdater();
@@ -156,6 +159,16 @@ export function SettingsPage() {
       un.then((f) => f());
     };
   }, []);
+
+  function setMicChan(mic: string, ch: number | null) {
+    setForm((f) => {
+      if (!f) return f;
+      const next = { ...(f.audio_mic_channels ?? {}) };
+      if (ch === null) delete next[mic];
+      else next[mic] = ch;
+      return { ...f, audio_mic_channels: next };
+    });
+  }
 
   function toggleChan(
     key: "audio_measure_channels" | "audio_overflow_channels",
@@ -673,6 +686,41 @@ export function SettingsPage() {
                 </span>
               </div>
               <div className="field wide">
+                <span>Vocal mic channels</span>
+                <div className="mic-map">
+                  {Array.from({ length: micCount }, (_, i) => String(i + 1)).map((mic) => {
+                    const ch = form.audio_mic_channels?.[mic];
+                    const peak = ch ? (chanLevels[ch - 1] ?? 0) : 0;
+                    return (
+                      <label key={mic} className="mic-map-row">
+                        <span className="mic-map-n">Mic {mic}</span>
+                        <select
+                          className="input"
+                          value={ch ?? ""}
+                          onChange={(e) => setMicChan(mic, e.target.value ? Number(e.target.value) : null)}
+                        >
+                          <option value="">not watched</option>
+                          {Array.from({ length: chCount }, (_, i) => i + 1).map((c) => (
+                            <option key={c} value={c}>Channel {c}</option>
+                          ))}
+                        </select>
+                        {/* Live proof the mapping is right: talk into the mic
+                            and this lights. Far quicker than trusting a
+                            Dante routing sheet. */}
+                        <span className={`mic-map-lamp ${ch && peak > 0.003 ? "on" : ""}`}>
+                          {ch ? (peak > 0.003 ? "signal" : "quiet") : ""}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <span className="hint">
+                  Route each vocal mic to its own channel on this input, then map it here — the
+                  desk can't report signal, so this is how ProDeck knows a mic has gone dead.
+                  Talk into a mic and watch its lamp to confirm the mapping.
+                </span>
+              </div>
+              <div className="field wide">
                 <span>Overflow / Listen channels</span>
                 <div className="chan-row">
                   {Array.from({ length: chCount }, (_, i) => i + 1).map((ch) => (
@@ -1182,6 +1230,16 @@ export function SettingsPage() {
             <input type="checkbox" checked={alertCfg.micMuted}
               onChange={(e) => setAlertCfg({ micMuted: e.target.checked })} />
             <span>Scheduled mic muted during service (Avantis)</span>
+          </label>
+          <label className="field check">
+            <input type="checkbox" checked={alertCfg.micSilent}
+              onChange={(e) => setAlertCfg({ micSilent: e.target.checked })} />
+            <span>
+              Scheduled mic open but silent
+              <span className="muted small">
+                {" "}— 90 s before each service and during songs. Needs the mic channels mapped below.
+              </span>
+            </span>
           </label>
           <label className="field check">
             <input type="checkbox" checked={alertCfg.audioSilence}

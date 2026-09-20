@@ -656,6 +656,34 @@ select.input {
 .pco-connected .btn {
   margin-top: 4px;
 }
+
+/* Mic → channel mapping (Settings → Audio). The lamp is the point: it is how
+   you confirm a Dante route without leaving the booth. */
+.mic-map {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px;
+}
+.mic-map-row {
+  display: grid;
+  grid-template-columns: 4.2rem 1fr 3.6rem;
+  align-items: center;
+  gap: 8px;
+}
+.mic-map-n {
+  font-size: 13px;
+  opacity: 0.8;
+}
+.mic-map-lamp {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.45;
+}
+.mic-map-lamp.on {
+  color: #1f9d55;
+  opacity: 1;
+}
 .discovered {
   display: flex;
   flex-direction: column;

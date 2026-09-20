@@ -91,6 +91,12 @@ pub struct Settings {
     pub audio_measure_channels: Vec<u32>,
     /// Channels mixed into the overflow / "Listen" stream. Empty = overflow off.
     pub audio_overflow_channels: Vec<u32>,
+    /// Vocal-mic watch: ProDeck mic number -> 1-based channel on the audio
+    /// input. The desk can't answer "is this mic live?" — Allen & Heath's MIDI
+    /// control protocol carries mutes and faders but no metering — so each
+    /// watched mic is routed to its own Dante channel and metered here.
+    /// Empty = the watch is off.
+    pub audio_mic_channels: std::collections::HashMap<String, u32>,
     /// Auto-send the live song's key to a backing-track / vocal-tune rig as the
     /// pitch class (0–11). OSC goes to keysend_osc_host:port (empty host = off);
     /// MIDI Program Change (+ optional CC) goes out keysend_midi_port (None = off).
@@ -221,6 +227,7 @@ impl Default for Settings {
             gemini_match_enabled: false,
             audio_measure_channels: Vec::new(),
             audio_overflow_channels: Vec::new(),
+            audio_mic_channels: std::collections::HashMap::new(),
             keysend_enabled: false,
             keysend_osc_host: String::new(),
             keysend_osc_port: 12321,

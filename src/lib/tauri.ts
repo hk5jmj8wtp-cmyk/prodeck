@@ -270,6 +270,8 @@ export interface Settings {
   pco_app_id: string | null;
   pco_secret: string | null;
   pco_client_id: string | null;
+  /** Vocal-mic watch: mic number -> 1-based audio input channel. */
+  audio_mic_channels: Record<string, number>;
   spl_calibration: number;
   web_enabled: boolean;
   web_port: number;
