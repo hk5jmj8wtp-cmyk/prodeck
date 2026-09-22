@@ -37,6 +37,29 @@ numbers below are the ones shown in **Settings → Software Update**.
 
 ## Unreleased
 
+### Fixed — ProPresenter appeared to disconnect every 20–30 seconds
+
+If ProDeck kept announcing that it had lost ProPresenter and then found it
+again, while ProPresenter was sitting right there working, this was why.
+
+ProDeck listened to ProPresenter's live status feeds and treated silence on
+them as proof ProPresenter had gone away. But ProPresenter only sends on those
+feeds when something *changes*, and a timer only sends while it is actually
+running. A booth parked on a slide with its timers stopped — a soundcheck, a
+pre-service hold, most of a week — sends nothing at all, so after fifteen quiet
+seconds ProDeck declared it dead and un-declared it the moment anyone touched
+anything.
+
+ProDeck now asks ProPresenter directly, every five seconds, instead of
+inferring it from silence, and requires two consecutive failures before
+reporting a problem. A booth left untouched for an hour stays connected for the
+hour.
+
+Reported by Life Pacific University, whose troubleshooting is what found it:
+they saw it over the loopback address as well as across the network, which
+ruled out anything network-related, and noted that Bitfocus Companion on the
+same machines never dropped — because Companion asks rather than listens.
+
 ### SPL now reads in dB(A), and the calibration will finally hold
 
 Three fixes to the sound level meter, which together are why calibrating it

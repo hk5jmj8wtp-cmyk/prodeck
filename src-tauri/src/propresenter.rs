@@ -412,6 +412,49 @@ pub async fn pp_playlist_thumbnail(
 // Live status streaming (ProPresenter chunked HTTP API)
 // ---------------------------------------------------------------------------
 
+/// Turns a stream of probe results into connect/disconnect announcements.
+///
+/// Split out from the loop so the hysteresis is testable, because the failure
+/// this replaced was not "wrong answer" but "right answer, announced over and
+/// over": the UI flapping between connected and disconnected is what people
+/// actually report, and the rule that prevents it is worth pinning.
+#[derive(Debug, Default)]
+struct HealthGate {
+    misses: u32,
+    announced_dead: bool,
+}
+
+/// What the watcher should tell the UI, if anything.
+#[derive(Debug, PartialEq)]
+enum Health {
+    Nothing,
+    Dead,
+    Alive,
+}
+
+impl HealthGate {
+    /// Two consecutive misses before declaring death, so a single dropped
+    /// request doesn't take the panels down. Announce each transition once.
+    const MISSES_TO_DECLARE_DEAD: u32 = 2;
+
+    fn observe(&mut self, alive: bool) -> Health {
+        if alive {
+            self.misses = 0;
+            if self.announced_dead {
+                self.announced_dead = false;
+                return Health::Alive;
+            }
+            return Health::Nothing;
+        }
+        self.misses = self.misses.saturating_add(1);
+        if self.misses >= Self::MISSES_TO_DECLARE_DEAD && !self.announced_dead {
+            self.announced_dead = true;
+            return Health::Dead;
+        }
+        Health::Nothing
+    }
+}
+
 fn spawn_status_streams(
     client: &reqwest::Client,
     config: &ProPresenterConfig,
@@ -434,8 +477,9 @@ fn spawn_status_streams(
         ("stage_message", "stage/message"),
     ];
 
-    // When did any stream last deliver data? ProPresenter's status streams are
-    // chatty (timers tick), so silence is a reliable death signal.
+    // When did any stream last deliver data? Recorded for diagnostics only —
+    // silence is NOT a death signal, because ProPresenter only pushes on
+    // change. See the health probe below.
     let last_ok = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(
         crate::identity::now_ms(),
     ));
@@ -474,29 +518,57 @@ fn spawn_status_streams(
     // Worse, the mDNS self-heal is gated on NOT being connected, so the feature
     // written for "the ProPresenter Mac is on DHCP and hops IPs" could never
     // fire after the first successful connect.
+    //
+    // The first version of this watch inferred death from SILENCE on the status
+    // streams, reasoning that "the streams are chatty (timers tick)". They are
+    // not. ProPresenter pushes on CHANGE, and a timer only ticks while it is
+    // RUNNING — a booth sitting on a slide with its timers stopped emits
+    // nothing at all on any of the nine endpoints. That is most of a week and
+    // all of a soundcheck, so ProDeck declared a perfectly healthy
+    // ProPresenter dead after 15 seconds of quiet and un-declared it the
+    // instant anything moved.
+    //
+    // Reported from a chapel at Life Pacific University as disconnects every
+    // 20-30 seconds. Two details in that report are what identified it: it
+    // happened over the loopback address as well as across the network, which
+    // rules out anything to do with the network; and Bitfocus Companion on the
+    // same machines never dropped, because Companion asks rather than listens.
+    // Their own screen recording showed the contradiction directly — the
+    // "Not connected to ProPresenter" banner above a green Pro health dot,
+    // with the timer panel showing four timers all stopped at preset values.
+    //
+    // So: ask, don't infer. One cheap request on a timer answers "is
+    // ProPresenter there?" definitively, whether or not anything is happening.
+    // `last_ok` still records stream liveness for diagnostics, but nothing
+    // decides connectivity from it any more.
     {
         let app = app.clone();
-        let last_ok = last_ok.clone();
+        let probe_url = format!("{}/v1/version", config.base());
+        // The command client's short timeout is right here: a health probe that
+        // hangs for 30s is not a health probe.
+        let probe = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(4))
+            .build()
+            .unwrap_or_default();
         handles.push(tokio::spawn(async move {
-            const DEAD_AFTER_MS: u64 = 15_000;
-            let mut announced = false;
+            // Two consecutive misses, so one dropped packet or a momentary
+            // stall doesn't flap the whole UI — the fault this replaces.
+            const EVERY: std::time::Duration = std::time::Duration::from_secs(5);
+            let mut gate = HealthGate::default();
             loop {
-                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                let quiet = crate::identity::now_ms()
-                    .saturating_sub(last_ok.load(std::sync::atomic::Ordering::Acquire));
-                if quiet >= DEAD_AFTER_MS {
-                    if !announced {
-                        announced = true;
-                        crate::diag::log(format!(
-                            "[pp] no stream data for {}s — reporting disconnected",
-                            quiet / 1000
-                        ));
+                tokio::time::sleep(EVERY).await;
+                let alive =
+                    matches!(probe.get(&probe_url).send().await, Ok(r) if r.status().is_success());
+                match gate.observe(alive) {
+                    Health::Dead => {
+                        crate::diag::log("[pp] health probe failed twice — reporting disconnected");
                         app.emit("pp:disconnected", ()).ok();
                     }
-                } else if announced {
-                    // Data came back on its own without a reconnect.
-                    announced = false;
-                    app.emit("pp:connected", serde_json::json!({})).ok();
+                    Health::Alive => {
+                        crate::diag::log("[pp] health probe recovered — reporting connected");
+                        app.emit("pp:connected", serde_json::json!({})).ok();
+                    }
+                    Health::Nothing => {}
                 }
             }
         }));
@@ -694,4 +766,54 @@ pub fn spawn_announcement_poll(app: tauri::AppHandle) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod health_tests {
+    use super::{Health, HealthGate};
+
+    #[test]
+    fn a_quiet_but_reachable_propresenter_is_never_declared_dead() {
+        // The bug this replaced: nine status streams go silent whenever
+        // nothing changes and no timer is running, and silence was read as
+        // death. The probe answers regardless, so a booth parked on a slide
+        // for an hour stays connected for the whole hour.
+        let mut g = HealthGate::default();
+        for _ in 0..720 {
+            assert_eq!(g.observe(true), Health::Nothing);
+        }
+    }
+
+    #[test]
+    fn one_missed_probe_does_not_take_the_panels_down() {
+        let mut g = HealthGate::default();
+        assert_eq!(g.observe(true), Health::Nothing);
+        assert_eq!(g.observe(false), Health::Nothing);
+        // Recovered before the second miss: nothing was ever announced, so
+        // there is nothing to un-announce either.
+        assert_eq!(g.observe(true), Health::Nothing);
+    }
+
+    #[test]
+    fn two_misses_declare_death_once_and_recovery_once() {
+        let mut g = HealthGate::default();
+        assert_eq!(g.observe(false), Health::Nothing);
+        assert_eq!(g.observe(false), Health::Dead);
+        // Still dead, still quiet — no repeat announcements.
+        assert_eq!(g.observe(false), Health::Nothing);
+        assert_eq!(g.observe(false), Health::Nothing);
+        assert_eq!(g.observe(true), Health::Alive);
+        assert_eq!(g.observe(true), Health::Nothing);
+    }
+
+    #[test]
+    fn it_cannot_flap_on_alternating_results() {
+        // A marginal link that answers every other probe should settle on
+        // "connected", not strobe the UI. Every miss is followed by a hit, so
+        // the count never reaches two.
+        let mut g = HealthGate::default();
+        for i in 0..50 {
+            assert_eq!(g.observe(i % 2 == 0), Health::Nothing, "flapped at {i}");
+        }
+    }
 }
