@@ -37,6 +37,27 @@ numbers below are the ones shown in **Settings → Software Update**.
 
 ## Unreleased
 
+### ProDeck now tells you when macOS has cut it off from your network
+
+If ProPresenter, the sound desk and the kiosks all stop working at once while
+Planning Center carries on as normal, this is almost always the cause — and
+until now ProDeck reported it as "no response (unreachable / firewalled)",
+which sends you hunting through the router for a problem that is one switch in
+System Settings.
+
+macOS requires an app's permission to reach your local network, and it ties
+that permission to the app itself — so **installing a ProDeck update can
+switch it back off**. Nothing on screen says so. The internet still works, the
+crew gateway still works, and only the things in the building go dark.
+
+ProDeck now recognises that exact pattern — internet reachable, every address
+in the building unreachable — and says so plainly, with a button that opens the
+right settings pane. Turn ProDeck on in that list and everything reconnects
+within seconds; no restart.
+
+Installing on the booth also checks for it now, while you're still at the
+keyboard, rather than letting a Saturday update surface at 7am on Sunday.
+
 ### Fixed — ProPresenter appeared to disconnect every 20–30 seconds
 
 If ProDeck kept announcing that it had lost ProPresenter and then found it

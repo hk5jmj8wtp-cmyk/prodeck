@@ -84,3 +84,48 @@ if (cd "$REPO_DIR/crew-edge" && npx wrangler deploy -c "$EDGE_CFG" >/dev/null 2>
 else
   echo "WARN: crew-edge deploy skipped/failed — edge booth-off shell may lag this build"
 fi
+
+# 6. Did macOS keep letting ProDeck onto the local network?
+#
+#    Since Sequoia this is a per-app permission, and macOS keys it to the app
+#    bundle — so replacing ProDeck can land it back in the list switched OFF.
+#    The failure is silent and badly disguised: Planning Center still works
+#    (that's the internet), the crew gateway still works (that's loopback), and
+#    only ProPresenter, the sound desk and the kiosks go dark. It cost an
+#    afternoon here before anyone thought to check, and an install on a
+#    Saturday would be discovered at 7am on a Sunday.
+#
+#    So check it now, while whoever ran the install is still at the keyboard.
+#    The test is comparative: if THIS SHELL can reach ProPresenter and ProDeck
+#    cannot, the network is fine and the permission is not.
+PP_HOST="$(python3 -c "import json,os;print(json.load(open(os.path.expanduser('~/Library/Application Support/ProDeck/settings.json'))).get('pp_host',''))" 2>/dev/null || true)"
+PP_PORT="$(python3 -c "import json,os;print(json.load(open(os.path.expanduser('~/Library/Application Support/ProDeck/settings.json'))).get('pp_port',0))" 2>/dev/null || true)"
+if [ -n "$PP_HOST" ] && [ "${PP_PORT:-0}" != "0" ]; then
+  if curl -s -o /dev/null --max-time 4 "http://$PP_HOST:$PP_PORT/version"; then
+    # ProPresenter is up and this shell can see it. Give ProDeck 45s to open a
+    # socket of its own before concluding anything.
+    PID=""; OK=""
+    for _ in $(seq 1 15); do
+      sleep 3
+      PID="$(launchctl list com.prodeck.watchdog 2>/dev/null | awk -F'= ' '/"PID"/{print $2}' | tr -d ';')"
+      [ -n "$PID" ] || continue
+      if lsof -nP -iTCP -a -p "$PID" 2>/dev/null | grep -q ":$PP_PORT "; then OK=1; break; fi
+    done
+    if [ -n "$OK" ]; then
+      echo "local network OK — ProDeck reached ProPresenter at $PP_HOST:$PP_PORT"
+    else
+      echo ""
+      echo "  ⚠️  ProDeck CANNOT reach your local network."
+      echo "     This shell reached ProPresenter at $PP_HOST:$PP_PORT, ProDeck did not —"
+      echo "     so the network is fine and macOS has switched off ProDeck's"
+      echo "     Local Network permission (it does this when the app is replaced)."
+      echo ""
+      echo "     Fix, ~10 seconds, no restart needed:"
+      echo "       open \"x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork\""
+      echo "     then turn ProDeck ON. ProPresenter, the desk and the kiosks all come back."
+      echo ""
+    fi
+  else
+    echo "local network check skipped — ProPresenter not answering at $PP_HOST:$PP_PORT right now"
+  fi
+fi

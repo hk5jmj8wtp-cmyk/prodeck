@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 import { useProDeck } from "../store";
-import { discoverServices, IS_WEB, type DiscoveredService } from "../lib/tauri";
+import {
+  diagLocalNetwork,
+  discoverServices,
+  IS_WEB,
+  openLocalNetworkSettings,
+  type DiscoveredService,
+  type LocalNetworkReport,
+} from "../lib/tauri";
 import { Icon } from "./Icon";
 
 export function ConnectCard() {
@@ -13,6 +20,27 @@ export function ConnectCard() {
   const [scanned, setScanned] = useState(false);
   const [busy, setBusy] = useState(false);
   const [advanced, setAdvanced] = useState(false);
+  const [lanReport, setLanReport] = useState<LocalNetworkReport | null>(null);
+
+  // Once the automatic retries have given up, find out WHY before blaming the
+  // network. The one cause that looks like everything else is macOS having
+  // revoked local-network access: Planning Center keeps working, so nobody
+  // suspects a permission.
+  useEffect(() => {
+    if (IS_WEB || connected || ppConnecting) {
+      setLanReport(null);
+      return;
+    }
+    let stale = false;
+    diagLocalNetwork()
+      .then((r) => {
+        if (!stale) setLanReport(r);
+      })
+      .catch(() => {});
+    return () => {
+      stale = true;
+    };
+  }, [connected, ppConnecting]);
 
   useEffect(() => {
     if (settings) {
@@ -194,9 +222,28 @@ export function ConnectCard() {
           </p>
         </>
       )}
-      {/* Only once the automatic retries have genuinely given up — otherwise
-          this is a transient first-attempt failure dressed as a fault. */}
-      {connectError && !ppConnecting && <p className="error">{connectError}</p>}
+      {/* The specific diagnosis beats the generic error. Shown instead of it,
+          because "unreachable / firewalled" actively misdirects here. */}
+      {lanReport?.likely_blocked ? (
+        <div className="lan-blocked">
+          <strong>macOS is blocking ProDeck from your local network.</strong>
+          <p>
+            Planning Center still works, so the machine is online — but nothing
+            in the building is reachable: {lanReport.lan.map((t) => t.label).join(", ")}.
+            That is a macOS privacy permission, not your network. It can switch
+            itself off when ProDeck updates.
+          </p>
+          <button className="btn primary" onClick={() => openLocalNetworkSettings()}>
+            Open Local Network settings
+          </button>
+          <p className="hint">
+            Turn <strong>ProDeck</strong> on in that list. Everything reconnects on its own
+            within a few seconds — no restart needed.
+          </p>
+        </div>
+      ) : (
+        connectError && !ppConnecting && <p className="error">{connectError}</p>
+      )}
     </div>
   );
 }

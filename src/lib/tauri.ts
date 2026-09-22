@@ -455,6 +455,18 @@ export const ppFocusTrigger = (uuid: string, index: number) => {
  * across a whole 117-cue arrangement, landing on every index and never leaving
  * the presentation.
  */
+/** macOS Local Network diagnosis — see src-tauri/src/lan.rs. */
+export type LocalNetworkReport = {
+  internet_ok: boolean;
+  lan: { label: string; addr: string; reachable: boolean }[];
+  lan_ok: boolean;
+  /** Internet fine, every configured LAN address unreachable. */
+  likely_blocked: boolean;
+  gated_platform: boolean;
+};
+export const diagLocalNetwork = () => invoke<LocalNetworkReport>("diag_local_network");
+export const openLocalNetworkSettings = () => invoke<void>("open_local_network_settings");
+
 export const ppTriggerActiveCue = (cueIndex: number) =>
   ctrl(ppGetRaw(`presentation/active/${cueIndex}/trigger`));
 

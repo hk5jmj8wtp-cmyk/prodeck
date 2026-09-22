@@ -4,6 +4,7 @@ mod avantis;
 mod backup;
 mod diag;
 mod keepalive;
+mod lan;
 mod chat;
 mod checkin;
 mod discovery;
@@ -291,6 +292,8 @@ pub fn run() {
             pcoauth::pco_oauth_begin,
             pcoauth::pco_oauth_status,
             pcoauth::pco_oauth_disconnect,
+            lan::diag_local_network,
+            lan::open_local_network_settings,
             // Audio
             audio::list_audio_inputs,
             audio::default_audio_input,
