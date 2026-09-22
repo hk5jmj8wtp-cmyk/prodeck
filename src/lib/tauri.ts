@@ -430,41 +430,47 @@ export const ppFocusTrigger = (uuid: string, index: number) => {
     ),
   );
 };
-// Trigger a slide WITHIN A PLAYLIST the way an operator navigates it: keep
-// ProPresenter focused on this playlist (so it doesn't jump to the library copy),
-// make the item the active presentation when it isn't already (its destination +
-// arrangement load and the slide's actions fire), then go to the cue. cueIndex is
-// the DISPLAY position — the active item uses the playlist's arrangement.
-// alreadyActive skips re-triggering the item, which would flash back to its first
-// slide. This is how ProDeck stays in-playlist and on the right screen.
-export const ppPlaylistTrigger = (
-  playlistId: string,
-  itemIndex: number,
-  cueIndex: number,
-  alreadyActive: boolean,
-) => {
-  const pl = encodeURIComponent(playlistId);
-  let chain = ppGetRaw(`playlist/${pl}/focus`);
-  if (!alreadyActive)
-    chain = chain.then(() => ppGetRaw(`playlist/focused/${itemIndex}/trigger`));
-  return ctrl(chain.then(() => ppGetRaw(`presentation/active/${cueIndex}/trigger`)));
-};
 /**
- * Trigger a cue of whatever is LIVE, by its cue index.
+ * Go straight to one cue of one playlist item. One request.
+ *
+ * ProDeck used to do this in three: focus the playlist, trigger the item, then
+ * trigger the cue. Every click therefore restarted the item at its first slide
+ * and jumped from there to the one you asked for — visible as the deck
+ * skipping around, and a race besides, since the item's own first cue fires
+ * its actions on the way past.
+ *
+ * `playlist/{playlist}/{item}/{cue}/trigger` does the whole thing in one go,
+ * verified against a live ProPresenter: it activates the item with its own
+ * arrangement and destination and lands on the cue, with nothing fired in
+ * between. Some items answer 404 to a cue-level trigger (a presentation with
+ * no addressable cues), so those fall back to triggering the item itself
+ * rather than failing the click.
+ */
+/**
+ * Trigger a cue of whatever is LIVE, by its cue index — used by the slide grid,
+ * which shows the active presentation rather than a playlist item.
  *
  * `.../trigger` is the important part: ProPresenter treats a cue trigger as
- * "play this cue", so everything hanging off the slide fires with it — the
- * look it changes to, the clears it performs, media, macros, timers. An
- * endpoint that merely moved the index would land on the right slide with
- * none of that happening, which looks correct on the operator's screen and is
- * wrong on the wall.
- *
- * Same endpoint the playlist path already uses, so a slide clicked in the grid
- * behaves exactly like the same slide clicked in the playlist.
+ * "play this cue", so whatever the slide carries fires with it. Verified live
+ * across a whole 117-cue arrangement, landing on every index and never leaving
+ * the presentation.
  */
 export const ppTriggerActiveCue = (cueIndex: number) =>
   ctrl(ppGetRaw(`presentation/active/${cueIndex}/trigger`));
 
+export const ppPlaylistTrigger = (
+  playlistId: string,
+  itemIndex: number,
+  cueIndex: number,
+  _alreadyActive?: boolean,
+) => {
+  const pl = encodeURIComponent(playlistId);
+  return ctrl(
+    ppGetRaw(`playlist/${pl}/${itemIndex}/${cueIndex}/trigger`).catch(() =>
+      ppGetRaw(`playlist/${pl}/${itemIndex}/trigger`),
+    ),
+  );
+};
 export const ppDelete = (path: string) => invoke<void>("pp_delete", { path });
 export const ppNext = () => ctrl(invoke<void>("pp_trigger_next"));
 export const ppPrevious = () => ctrl(invoke<void>("pp_trigger_previous"));
