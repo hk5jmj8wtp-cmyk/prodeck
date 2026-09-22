@@ -1,0 +1,426 @@
+{
+ "presentation": {
+  "id": {
+   "uuid": "820B9349-CB76-4783-946C-F44E5F4BC3B3",
+   "name": "THANK GOD I'M FREE",
+   "index": 798
+  },
+  "groups": [
+   {
+    "name": "Intro",
+    "color": {
+     "red": 0.7019608020782471,
+     "green": 0.6549019813537598,
+     "blue": 0.1411764770746231,
+     "alpha": 1.0
+    },
+    "slides": [
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     }
+    ],
+    "uuid": "3E5D09CD-8B5E-4F54-B63F-085E2F6B8078"
+   },
+   {
+    "name": "Verse 1",
+    "color": {
+     "red": 0.0,
+     "green": 0.46666666865348816,
+     "blue": 0.800000011920929,
+     "alpha": 1.0
+    },
+    "slides": [
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     }
+    ],
+    "uuid": "A3150C2E-CC3F-4BAD-8006-8C2341048CD7"
+   },
+   {
+    "name": "Verse 2",
+    "color": {
+     "red": 0.0,
+     "green": 0.3490196168422699,
+     "blue": 0.6000000238418579,
+     "alpha": 1.0
+    },
+    "slides": [
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     }
+    ],
+    "uuid": "D0920A77-7B74-490C-89A0-9E63465A4E7D"
+   },
+   {
+    "name": "Chorus",
+    "color": {
+     "red": 0.800000011920929,
+     "green": 0.0,
+     "blue": 0.30588236451148987,
+     "alpha": 1.0
+    },
+    "slides": [
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     }
+    ],
+    "uuid": "3A1900B0-0F7E-4F5A-9BD7-72EC93A6A1B3"
+   },
+   {
+    "name": "Post-Chorus",
+    "color": {
+     "red": 0.3999999761581421,
+     "green": 0.3999999761581421,
+     "blue": 0.3999999761581421,
+     "alpha": 1.0
+    },
+    "slides": [
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     }
+    ],
+    "uuid": "DCF9CF53-C349-4EF1-A5BA-D8A50A29E2FA"
+   },
+   {
+    "name": "Turnaround",
+    "color": {
+     "red": 0.1411764770746231,
+     "green": 0.7019608020782471,
+     "blue": 0.2980392277240753,
+     "alpha": 1.0
+    },
+    "slides": [
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     }
+    ],
+    "uuid": "1DE2E9FD-872B-44EB-A719-4311B851C017"
+   },
+   {
+    "name": "Verse 3",
+    "color": {
+     "red": 0.0,
+     "green": 0.23529411852359772,
+     "blue": 0.4000000059604645,
+     "alpha": 1.0
+    },
+    "slides": [
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     }
+    ],
+    "uuid": "C1885489-FBDA-483D-AD37-AA712AAE6448"
+   },
+   {
+    "name": "Bridge",
+    "color": {
+     "red": 0.4627451002597809,
+     "green": 0.0,
+     "blue": 0.800000011920929,
+     "alpha": 1.0
+    },
+    "slides": [
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     }
+    ],
+    "uuid": "7F6D39CF-6CC0-4886-B353-1487C33E46C8"
+   },
+   {
+    "name": "Bridge",
+    "color": {
+     "red": 0.4627451002597809,
+     "green": 0.0,
+     "blue": 0.800000011920929,
+     "alpha": 1.0
+    },
+    "slides": [
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     }
+    ],
+    "uuid": "BAEB2776-B876-4F11-AA5B-9B63BE2C7AD6"
+   },
+   {
+    "name": "Refrain",
+    "color": {
+     "red": 0.3999999761581421,
+     "green": 0.3999999761581421,
+     "blue": 0.3999999761581421,
+     "alpha": 1.0
+    },
+    "slides": [
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     }
+    ],
+    "uuid": "44C1A703-A1E8-4882-9BF8-6068EBF81ECD"
+   },
+   {
+    "name": "Chorus",
+    "color": {
+     "red": 0.800000011920929,
+     "green": 0.0,
+     "blue": 0.30588236451148987,
+     "alpha": 1.0
+    },
+    "slides": [
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     }
+    ],
+    "uuid": "CAE5B28E-CB51-4823-84D7-B38EDD892C11"
+   },
+   {
+    "name": "Post-Chorus",
+    "color": {
+     "red": 0.3999999761581421,
+     "green": 0.3999999761581421,
+     "blue": 0.3999999761581421,
+     "alpha": 1.0
+    },
+    "slides": [
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     }
+    ],
+    "uuid": "C5E6D9CD-7C2B-4781-BDA0-3D020776BE5D"
+   },
+   {
+    "name": "Post-Chorus",
+    "color": {
+     "red": 0.3999999761581421,
+     "green": 0.3999999761581421,
+     "blue": 0.3999999761581421,
+     "alpha": 1.0
+    },
+    "slides": [
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     },
+     {
+      "text": "x"
+     }
+    ],
+    "uuid": "EE2429B6-A465-4F66-AC46-1A08783CA2A0"
+   },
+   {
+    "name": "Ending",
+    "color": {
+     "red": 0.6000000238418579,
+     "green": 0.5607843399047852,
+     "blue": 0.12156862765550613,
+     "alpha": 1.0
+    },
+    "slides": [
+     {
+      "text": "x"
+     }
+    ],
+    "uuid": "5BB4C130-C461-41E9-B8DA-A91AABF607CC"
+   }
+  ],
+  "has_timeline": false,
+  "presentation_path": "/Users/cornerstoneproduction/Library/Application Support/RenewedVision/ProPresenter/UserWorkspaces/ProPresenter/Libraries/Presentations/THANK GOD I'M FREE.pro",
+  "destination": "presentation",
+  "arrangements": [
+   {
+    "id": {
+     "uuid": "346469B9-3EEC-4260-A80D-29B1FA66D4AF",
+     "name": "Full",
+     "index": 0
+    },
+    "groups": [
+     "3E5D09CD-8B5E-4F54-B63F-085E2F6B8078",
+     "A3150C2E-CC3F-4BAD-8006-8C2341048CD7",
+     "D0920A77-7B74-490C-89A0-9E63465A4E7D",
+     "3A1900B0-0F7E-4F5A-9BD7-72EC93A6A1B3",
+     "DCF9CF53-C349-4EF1-A5BA-D8A50A29E2FA",
+     "1DE2E9FD-872B-44EB-A719-4311B851C017",
+     "C1885489-FBDA-483D-AD37-AA712AAE6448",
+     "3A1900B0-0F7E-4F5A-9BD7-72EC93A6A1B3",
+     "DCF9CF53-C349-4EF1-A5BA-D8A50A29E2FA",
+     "7F6D39CF-6CC0-4886-B353-1487C33E46C8",
+     "BAEB2776-B876-4F11-AA5B-9B63BE2C7AD6",
+     "BAEB2776-B876-4F11-AA5B-9B63BE2C7AD6",
+     "44C1A703-A1E8-4882-9BF8-6068EBF81ECD",
+     "CAE5B28E-CB51-4823-84D7-B38EDD892C11",
+     "DCF9CF53-C349-4EF1-A5BA-D8A50A29E2FA",
+     "BAEB2776-B876-4F11-AA5B-9B63BE2C7AD6",
+     "BAEB2776-B876-4F11-AA5B-9B63BE2C7AD6",
+     "44C1A703-A1E8-4882-9BF8-6068EBF81ECD",
+     "C5E6D9CD-7C2B-4781-BDA0-3D020776BE5D",
+     "EE2429B6-A465-4F66-AC46-1A08783CA2A0",
+     "5BB4C130-C461-41E9-B8DA-A91AABF607CC"
+    ],
+    "total_cues": 117
+   }
+  ],
+  "current_arrangement": "",
+  "type": "multitracks",
+  "is_authorized": true,
+  "total_cues": 117
+ }
+}

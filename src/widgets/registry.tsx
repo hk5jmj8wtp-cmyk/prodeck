@@ -12,6 +12,7 @@ import {
   activePresentation,
   currentSlideIndex,
   stageMessageText,
+  currentTotalCues,
 } from "../lib/status";
 import { useLiveTimers } from "../lib/liveTimers";
 import { useTracking } from "../trackingStore";
@@ -81,7 +82,9 @@ import {
   NeedsWeb,
 } from "../components/NeedsConnection";
 import { RtaGraph } from "../components/RtaGraph";
-import { parseSlides, type Slide } from "../components/PlaylistControl";
+import { type Slide } from "../components/PlaylistControl";
+import { slidesForActivePresentation } from "../lib/slideOrder";
+import { ppTriggerActiveCue } from "../lib/tauri";
 
 export interface WidgetProps {
   widget: Widget;
@@ -298,6 +301,14 @@ function SlideGridWidget() {
   const pres = activePresentation(status);
   const liveIdx = currentSlideIndex(status);
   const uuid = pres.uuid ?? "";
+  const { can } = usePerms();
+  const canControl = can("control");
+  // From slide_index, NOT from the presentation document — the two disagree
+  // and only this one counts in the same space as liveIdx. Held in a ref so a
+  // cue count arriving after the fetch doesn't re-trigger it.
+  const liveCues = currentTotalCues(status);
+  const cuesRef = useRef<number | null>(liveCues);
+  cuesRef.current = liveCues;
 
   useEffect(() => {
     if (!connected || !uuid) {
@@ -306,9 +317,16 @@ function SlideGridWidget() {
     }
     let stale = false;
     setSlides(null);
+    // Fetch the live presentation and lay its slides out in the order
+    // ProPresenter is actually playing — the LIVE cue count decides, because
+    // `current_arrangement` comes back empty on a real booth even while an
+    // arrangement is plainly in use. Without this the grid numbered slides in
+    // stored order while `slide_index` counts in arrangement order, so on a
+    // song with repeats it highlighted the wrong card and, past the end of
+    // the stored list, no card at all.
     ppGet(`presentation/${encodeURIComponent(uuid)}`)
       .then((j) => {
-        if (!stale) setSlides(parseSlides(j));
+        if (!stale) setSlides(slidesForActivePresentation(j, cuesRef.current));
       })
       .catch(() => {
         if (!stale) setSlides([]);
@@ -344,14 +362,20 @@ function SlideGridWidget() {
           </div>
           <div className="sg-cards">
             {sec.slides.map((sl) => (
-              <div
+              <button
+                type="button"
                 className={`sg-card ${sl.index === liveIdx ? "live" : ""}`}
                 key={sl.index}
-                title={sl.text}
+                title={canControl ? sl.text : "You don't have control permission"}
+                disabled={!canControl}
+                // mousedown is swallowed so clicking a slide inside a dashboard
+                // tile doesn't start dragging the tile instead.
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={() => ppTriggerActiveCue(sl.index)}
               >
                 <span className="sg-n">{sl.index + 1}</span>
                 <span className="sg-text">{sl.text || <em className="faint">no text</em>}</span>
-              </div>
+              </button>
             ))}
           </div>
         </div>

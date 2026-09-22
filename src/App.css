@@ -6572,6 +6572,28 @@ select.input {
   line-height: 1.4;
   color: var(--muted);
   overflow: hidden;
+  /* Now a <button>: strip the UA defaults it arrives with, and make it read
+     as something you can press. */
+  appearance: none;
+  -webkit-appearance: none;
+  font-family: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms, transform 60ms;
+}
+.sg-card:hover:not(:disabled) {
+  border-color: var(--accent, #4f8cff);
+}
+.sg-card:active:not(:disabled) {
+  transform: scale(0.985);
+}
+.sg-card:disabled {
+  cursor: default;
+}
+.sg-card:focus-visible {
+  outline: 2px solid var(--accent, #4f8cff);
+  outline-offset: 2px;
 }
 .sg-card.live {
   background: var(--good-soft);

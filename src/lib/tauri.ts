@@ -449,6 +449,22 @@ export const ppPlaylistTrigger = (
     chain = chain.then(() => ppGetRaw(`playlist/focused/${itemIndex}/trigger`));
   return ctrl(chain.then(() => ppGetRaw(`presentation/active/${cueIndex}/trigger`)));
 };
+/**
+ * Trigger a cue of whatever is LIVE, by its cue index.
+ *
+ * `.../trigger` is the important part: ProPresenter treats a cue trigger as
+ * "play this cue", so everything hanging off the slide fires with it — the
+ * look it changes to, the clears it performs, media, macros, timers. An
+ * endpoint that merely moved the index would land on the right slide with
+ * none of that happening, which looks correct on the operator's screen and is
+ * wrong on the wall.
+ *
+ * Same endpoint the playlist path already uses, so a slide clicked in the grid
+ * behaves exactly like the same slide clicked in the playlist.
+ */
+export const ppTriggerActiveCue = (cueIndex: number) =>
+  ctrl(ppGetRaw(`presentation/active/${cueIndex}/trigger`));
+
 export const ppDelete = (path: string) => invoke<void>("pp_delete", { path });
 export const ppNext = () => ctrl(invoke<void>("pp_trigger_next"));
 export const ppPrevious = () => ctrl(invoke<void>("pp_trigger_previous"));

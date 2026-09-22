@@ -21,6 +21,26 @@ export function currentSlideIndex(status: PpStatus): number | null {
   return typeof idx === "number" ? idx : null;
 }
 
+/**
+ * How many cues the LIVE index counts in.
+ *
+ * Deliberately taken from the same payload as the index itself, because
+ * ProPresenter's two cue counts disagree and only this one describes the
+ * space the index lives in. Measured on a live booth, mid-song:
+ *
+ *   presentation/{uuid}  total_cues:  69   (the stored document)
+ *   presentation/active  total_cues:  69
+ *   slide_index          total_cues: 117   (the arrangement being played)
+ *
+ * Align a slide list to 69 and every index past the stored order falls off
+ * the end — which is the bug this exists to prevent, and which reading the
+ * more obvious of the two counts walks straight back into.
+ */
+export function currentTotalCues(status: PpStatus): number | null {
+  const n = (status.slideIndex as Json | null)?.presentation_index?.total_cues;
+  return typeof n === "number" && n > 0 ? n : null;
+}
+
 export interface LayerState {
   name: string;
   label: string;

@@ -4,6 +4,7 @@ import { activePresentation, currentSlideIndex } from "../lib/status";
 import { ppGet, ppPlaylistTrigger } from "../lib/tauri";
 import { SlideThumb } from "./SlideThumb";
 import { Icon } from "./Icon";
+import { parseSlides, type Slide } from "../lib/slideOrder";
 
 interface PlNode {
   uuid: string;
@@ -20,12 +21,9 @@ interface PlItem {
   type: string;
   hidden: boolean;
 }
-export interface Slide {
-  index: number; // display position within the item's arrangement — the cue index
-  group: string;
-  color?: string;
-  text: string;
-}
+// Re-exported: several widgets import these from here for historical reasons.
+export { parseSlides };
+export type { Slide };
 
 // ProPresenter returns playlists possibly nested inside playlist groups.
 // Flatten to the leaf playlists, tracking depth so we can indent the dropdown.
@@ -51,59 +49,6 @@ function flattenPlaylists(j: any): PlNode[] {
 }
 
 // ProPresenter group colors come as {red,green,blue} floats (0..1).
-function groupColor(c: any): string | undefined {
-  if (!c) return undefined;
-  if (typeof c === "string") return c;
-  const { red, green, blue } = c;
-  if ([red, green, blue].some((v) => typeof v !== "number")) return undefined;
-  const to = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 255);
-  return `rgb(${to(red)}, ${to(green)}, ${to(blue)})`;
-}
-
-// Flatten a presentation into individually-triggerable slides, keeping group
-// name/color so we can label them (Verse 1, Chorus, …).
-//
-// We follow the playlist item's selected arrangement (which repeats choruses,
-// drops unused groups, etc.) so the operator sees only the active arrangement in
-// performance order. The flattened position IS the cue index we use against the
-// playlist-scoped endpoints (thumbnail + trigger), which interpret the index in
-// this same arrangement space — so display, thumbnail, and trigger all line up.
-export function parseSlides(j: any, arrangementUuid?: string): Slide[] {
-  const pres = j?.presentation ?? j ?? {};
-  const groups = Array.isArray(pres.groups) ? pres.groups : [];
-  const byUuid = new Map<string, any>();
-  for (const g of groups) if (g?.uuid) byUuid.set(g.uuid, g);
-  const arrangements = Array.isArray(pres.arrangements) ? pres.arrangements : [];
-
-  // Follow the playlist item's arrangement when present, else stored order.
-  let sequence: any[] = groups;
-  if (arrangementUuid) {
-    const arr = arrangements.find((a: any) => a?.id?.uuid === arrangementUuid);
-    const seq = Array.isArray(arr?.groups) ? arr.groups : [];
-    if (seq.length) {
-      const mapped = seq
-        .map((gu: any) => byUuid.get(typeof gu === "string" ? gu : gu?.uuid))
-        .filter(Boolean);
-      if (mapped.length) sequence = mapped;
-    }
-  }
-
-  const out: Slide[] = [];
-  let idx = 0;
-  for (const g of sequence) {
-    const group = (g?.name ?? "").toString();
-    const color = groupColor(g?.color);
-    const slides = Array.isArray(g?.slides) ? g.slides : [];
-    for (let p = 0; p < slides.length; p++) {
-      const s = slides[p];
-      const text = (s?.text ?? "").toString().replace(/\s+/g, " ").trim();
-      out.push({ index: idx, group, color, text });
-      idx += 1;
-    }
-  }
-  return out;
-}
-
 // Slide-cache key: a presentation can appear twice with different arrangements.
 const slideKey = (it: PlItem) => `${it.presUuid}|${it.arrangementUuid}`;
 
