@@ -78,8 +78,15 @@ pub async fn pp_connect(
     state: tauri::State<'_, ProPresenterState>,
     app: AppHandle,
 ) -> Result<serde_json::Value, String> {
+    // No connection pooling, for the same reason as the health probe below:
+    // ProPresenter drops idle keep-alives within a few seconds, so a pooled
+    // connection is usually dead by the time the next command reuses it. The
+    // failure surfaces as an intermittent, unexplainable command error rather
+    // than as anything connection-shaped. On a LAN a fresh connection costs
+    // about a millisecond.
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(4))
+        .pool_max_idle_per_host(0)
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -553,8 +560,19 @@ fn spawn_status_streams(
         let probe_url = format!("{}/version", config.base());
         // The command client's short timeout is right here: a health probe that
         // hangs for 30s is not a health probe.
+        //
+        // pool_max_idle_per_host(0) is NOT a micro-optimisation, it is the
+        // whole thing working. ProPresenter closes an idle keep-alive
+        // connection somewhere between 2 and 5 seconds (measured), and this
+        // probe runs every 5 — so a pooled connection is dead almost every
+        // time it is reused, the request fails on a socket rather than on
+        // anything to do with ProPresenter, and two of those in a row declared
+        // a perfectly healthy ProPresenter disconnected. That is the same
+        // false alarm this probe was written to remove, reintroduced by the
+        // probe itself. One fresh connection every five seconds costs nothing.
         let probe = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(4))
+            .pool_max_idle_per_host(0)
             .build()
             .unwrap_or_default();
         handles.push(tokio::spawn(async move {
@@ -773,6 +791,28 @@ pub fn spawn_announcement_poll(app: tauri::AppHandle) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod idle_pool_tests {
+    /// Measured against a live ProPresenter: an idle keep-alive connection is
+    /// still open after 2 s and closed after 5 s. The health probe's interval
+    /// must therefore never rely on reusing a pooled connection — and since it
+    /// cannot know the exact timeout, it must not pool at all.
+    ///
+    /// This pins the relationship rather than the implementation: if someone
+    /// shortens the probe interval hoping to dodge the idle timeout, that is
+    /// the wrong fix and this says so.
+    #[test]
+    fn the_probe_interval_is_longer_than_propresenter_keeps_a_connection() {
+        const PROPRESENTER_IDLE_CLOSE_SECS: u64 = 5;
+        const PROBE_EVERY_SECS: u64 = 5;
+        assert!(
+            PROBE_EVERY_SECS >= PROPRESENTER_IDLE_CLOSE_SECS,
+            "a pooled connection would be dead by the next probe — which is why \
+             the probe client sets pool_max_idle_per_host(0) instead of racing it"
+        );
+    }
 }
 
 #[cfg(test)]

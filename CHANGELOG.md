@@ -37,6 +37,18 @@ numbers below are the ones shown in **Settings → Software Update**.
 
 ## Unreleased
 
+### Fixed — ProPresenter still appeared to drop out, this time for a different reason
+
+The previous fix replaced "listen for silence" with "ask ProPresenter every few
+seconds whether it's there". That check reused its network connection between
+asks — and ProPresenter closes an idle connection after a few seconds, so the
+connection was usually dead by the time the next check used it. The check
+failed on a stale socket rather than on anything to do with ProPresenter, and
+two of those in a row was enough to report a disconnection again.
+
+Every check now opens a fresh connection, as do ProDeck's other commands, for
+the same reason.
+
 ### ProDeck now tells you when macOS has cut it off from your network
 
 If ProPresenter, the sound desk and the kiosks all stop working at once while
