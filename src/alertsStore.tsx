@@ -364,6 +364,14 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
           if (mic) person[mic] = m.name;
         }
 
+        // Mute state comes from whichever desk is mirroring. All four
+        // supported models feed the same map — Avantis and dLive as MIDI note
+        // messages, SQ as NRPN, X32/M32 as OSC — so the suppression works on
+        // any of them. With no desk connected there is simply no mute
+        // information, which is NOT the same as "nothing is muted": saying so
+        // is the difference between a useful alert and one that cries wolf at
+        // a channel somebody muted on purpose.
+        const deskKnowsMutes = avantisUp.current;
         const watched: WatchedMic[] = Object.entries(micChans).map(([mic, channel]) => ({
           mic,
           channel,
@@ -371,14 +379,16 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
           // Muted is already the other alert's job. Excluding it here keeps a
           // deliberately muted mic from raising two alarms that say different
           // things about the same channel.
-          muted: avantisMutes.current[pc.micDeskMap[mic] ?? ""] === true,
+          muted: deskKnowsMutes && avantisMutes.current[pc.micDeskMap[mic] ?? ""] === true,
           lastSoundMs: chanLastSound.current.get(channel) ?? 0,
         }));
 
         for (const a of micAlerts(watched, phase, now)) {
+          const tail = phase === "precheck" ? " — service starts in under two minutes" : "";
+          const caveat = deskKnowsMutes ? "" : " (desk not connected — can't tell if it's muted)";
           active.set(`mic-silent:${a.mic}`, {
             severity: phase === "worship" ? "crit" : "warn",
-            message: describeAlert(a) + (phase === "precheck" ? " — service starts in under two minutes" : ""),
+            message: describeAlert(a) + tail + caveat,
           });
         }
       }

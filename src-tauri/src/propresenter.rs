@@ -52,7 +52,8 @@ pub(crate) async fn current_config(
 // Connect / disconnect
 // ---------------------------------------------------------------------------
 
-/// Probe a single host:port for the ProPresenter REST API (`/v1/version`).
+/// Probe a single host:port for the ProPresenter REST API (`/version` — that
+/// endpoint is NOT under `/v1`, unlike everything else).
 async fn try_version(
     client: &reqwest::Client,
     cfg: &ProPresenterConfig,
@@ -84,7 +85,7 @@ pub async fn pp_connect(
 
     // The REST API often isn't on the Bonjour-advertised port (that's the stage
     // display). Try the requested port, then fall back to the API default 1025,
-    // and use whichever actually serves /v1/version.
+    // and use whichever actually serves /version.
     let mut candidates = vec![config.port];
     if config.port != 1025 {
         candidates.push(1025);
@@ -543,7 +544,13 @@ fn spawn_status_streams(
     // decides connectivity from it any more.
     {
         let app = app.clone();
-        let probe_url = format!("{}/v1/version", config.base());
+        // /version, NOT /v1/version — the version endpoint is the one part of
+        // ProPresenter's API that does not sit under /v1, and /v1/version
+        // answers 404. Getting this wrong makes the probe fail forever and
+        // reports a healthy ProPresenter as permanently dead, which is worse
+        // than the bug it replaces. `try_version` above is the other caller
+        // and has always had it right.
+        let probe_url = format!("{}/version", config.base());
         // The command client's short timeout is right here: a health probe that
         // hangs for 30s is not a health probe.
         let probe = reqwest::Client::builder()
