@@ -4,7 +4,7 @@ import { discoverServices, IS_WEB, type DiscoveredService } from "../lib/tauri";
 import { Icon } from "./Icon";
 
 export function ConnectCard() {
-  const { connected, host: connectedHost, connect, disconnect, connectError, settings } =
+  const { connected, host: connectedHost, connect, disconnect, connectError, settings, ppConnecting } =
     useProDeck();
   const [host, setHost] = useState("localhost");
   const [port, setPort] = useState(1025);
@@ -81,6 +81,29 @@ export function ConnectCard() {
           browser — this view is along for the ride. Once that Mac connects, the
           live widgets here light up on their own.
         </p>
+      </div>
+    );
+  }
+
+  // Still trying on its own. Say so, and stay out of the way — the retry loop
+  // in the store reaches ProPresenter by itself within a few seconds of a
+  // restart, and the page that greeted people with "unreachable / firewalled"
+  // in the meantime was describing a problem that did not exist.
+  if (ppConnecting) {
+    return (
+      <div className="card connect-card">
+        <div className="card-head">
+          <h3>ProPresenter</h3>
+          <span className="chip">Connecting…</span>
+        </div>
+        <p className="muted">
+          Reaching {settings?.pp_host || "ProPresenter"} — this usually takes a
+          few seconds after ProDeck starts.
+        </p>
+        <button className="btn ghost small" onClick={scan} disabled={scanning}>
+          <Icon name="search" size={13} />
+          {scanning ? "Looking…" : "Find it on the network instead"}
+        </button>
       </div>
     );
   }
@@ -171,7 +194,9 @@ export function ConnectCard() {
           </p>
         </>
       )}
-      {connectError && <p className="error">{connectError}</p>}
+      {/* Only once the automatic retries have genuinely given up — otherwise
+          this is a transient first-attempt failure dressed as a fault. */}
+      {connectError && !ppConnecting && <p className="error">{connectError}</p>}
     </div>
   );
 }

@@ -84,6 +84,16 @@ interface Store {
   refreshSettings: () => Promise<void>;
   clearCaptions: () => void;
   connectError: string;
+  /**
+   * True while the booth is still trying to reach ProPresenter on its own and
+   * hasn't given up. Surfaces as "connecting…" rather than a failure, because
+   * the first attempt after launch almost always fails: `.local` names resolve
+   * over mDNS, which isn't ready in the second or two after the process
+   * starts. Reporting that as "unreachable / firewalled" sent people hunting
+   * through firewall settings for a connection that arrived by itself moments
+   * later — every single time ProDeck restarted.
+   */
+  ppConnecting: boolean;
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -118,6 +128,8 @@ export function ProDeckProvider({ children }: { children: ReactNode }) {
     if (settings?.public_url) setPublicUrl(settings.public_url);
   }, [settings?.public_url]);
   const [connectError, setConnectError] = useState("");
+  // Retries since the last success. Drives ppConnecting below.
+  const [ppFails, setPpFails] = useState(0);
 
   const connectedRef = useRef(false);
   connectedRef.current = connected;
@@ -133,6 +145,7 @@ export function ProDeckProvider({ children }: { children: ReactNode }) {
     setConnectError("");
     try {
       await ppConnect({ host: h, port });
+      setPpFails(0);
       setHost(`${h}:${port}`);
       // Remember any working connection — including one picked from a network
       // scan — so the app reconnects automatically next launch.
@@ -148,6 +161,7 @@ export function ProDeckProvider({ children }: { children: ReactNode }) {
       }
     } catch (e) {
       setConnectError(String(e));
+      setPpFails((n) => n + 1);
       throw e;
     }
   }
@@ -352,6 +366,13 @@ export function ProDeckProvider({ children }: { children: ReactNode }) {
   // the host also rescans Bonjour and follows ProPresenter to its new address
   // (self-heal). The API port is a ProPresenter setting, not per-address, so
   // the configured port is reused; connect() persists whatever works.
+  // Roughly the first half-minute of retries (the loop runs every ~6s). Long
+  // enough to cover mDNS waking up and ProPresenter finishing its own launch,
+  // short enough that a genuinely wrong address still gets reported.
+  const GRACE_ATTEMPTS = 5;
+  const ppConnecting =
+    !connected && !!settings?.pp_auto_connect && !!settings?.pp_host && ppFails < GRACE_ATTEMPTS;
+
   const failsRef = useRef(0);
   const healBusyRef = useRef(false);
   useEffect(() => {
@@ -424,6 +445,7 @@ export function ProDeckProvider({ children }: { children: ReactNode }) {
     refreshSettings,
     clearCaptions: () => setCaptions([]),
     connectError,
+    ppConnecting,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
