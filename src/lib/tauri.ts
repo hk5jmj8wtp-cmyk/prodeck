@@ -649,6 +649,8 @@ export interface KeySendState {
   lastProgram: number | null;
   lastAt: number | null;
   lastBy: string | null;
+  /** The booth's rtpMIDI session keeper (Network MIDI ports only). */
+  rtp?: { session: string; connected?: boolean; peers?: { name: string; state: string }[]; remembered?: string[]; repairs?: number; lastRepairAt?: number | null; error?: string } | null;
 }
 export const keysendState = () => invoke<KeySendState | null>("keysend_state");
 export const keysendSetState = (state: KeySendState) => invoke<void>("keysend_set_state", { state });

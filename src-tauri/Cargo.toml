@@ -32,6 +32,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "str
 urlencoding = "2"
 cpal = "0.15"
 midir = "0.10"
+plist = "1"
 rosc = "0.10"
 hound = "3.5"
 base64 = "0.22"
@@ -57,3 +58,8 @@ web-push = { version = "0.10", default-features = false }
 # dependency, so a downloaded app runs anywhere. Graph-wide via feature unification.
 openssl = { version = "0.10", features = ["vendored"] }
 p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Network MIDI session keeper (netmidi.rs) — already in the tree via midir.
+coremidi-sys = "3"
+core-foundation-sys = "0.8"

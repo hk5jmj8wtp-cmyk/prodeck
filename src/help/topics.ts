@@ -764,7 +764,9 @@ You can see and steer this in three places:
 - The **Song Key → Waves** dashboard tile is the same strip, for the booth or a phone.
 - Any phone with **Control** can press a key too; the booth does the sending.
 
-Press a key to send it now — a re-send of the same key is fine. **Tune off** when a speaker or a spoken piece shouldn't be tuned. If the strip says **no link**, the rtpMIDI session isn't connected: on the Waves PC check rtpMIDI shows this Mac's session connected, and remember the rig only sees MIDI ports that existed when LV1 started.
+Press a key to send it now — a re-send of the same key is fine. **Tune off** when a speaker or a spoken piece shouldn't be tuned. **The rig reconnects itself.** When the output is a Network MIDI session, ProDeck watches it and remembers who was connected (the Waves PC). After either computer restarts, ProDeck asks that peer to connect again every 20 seconds until it answers — nobody has to open Audio MIDI Setup. The strip's second chip shows it: **→ Axis_One** when connected, **waiting for …** while it keeps asking. It learns the peer the first time it sees it connected, so connect once by hand on a new setup.
+
+What still has to be true on the Waves PC: rtpMIDI starts when Windows starts, with its session enabled, and it must be running **before LV1 opens** — LV1 only sees MIDI ports that existed when it started. If keys stop after a restart and the chip says connected, restart LV1.
 
 Setup lives in **Settings → Song Key**: the MIDI output (your Network MIDI session) and channel.`,
     related: ["console", "ask-prodeck"],

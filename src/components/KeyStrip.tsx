@@ -71,6 +71,21 @@ export function KeyStrip({ compact }: { compact?: boolean }) {
         <span className={`chip ${st.midiConnected ? "online" : st.oscHost ? "" : "warn"}`} title={st.midiPort ? `MIDI port ${st.midiPort}` : "No MIDI port chosen"}>
           {link}
         </span>
+        {st.rtp && (
+          <span
+            className={`chip ${st.rtp.connected ? "online" : "warn"}`}
+            title={
+              st.rtp.error ??
+              (st.rtp.connected
+                ? `Network MIDI session "${st.rtp.session}" is connected. ProDeck reconnects it by itself after a restart.`
+                : st.rtp.remembered?.length
+                  ? `Network MIDI session "${st.rtp.session}" has nobody connected. ProDeck keeps asking ${st.rtp.remembered.join(", ")} every 20 seconds — is the Waves PC on, with rtpMIDI running?`
+                  : `Network MIDI session "${st.rtp.session}" has nobody connected, and ProDeck hasn't seen a peer on it yet to remember. Connect once in Audio MIDI Setup; after that ProDeck reconnects it by itself.`)
+            }
+          >
+            {st.rtp.connected ? `→ ${st.rtp.peers?.filter((p) => p.state === "running" || p.state === "connected").map((p) => p.name).join(", ")}` : st.rtp.remembered?.length ? `waiting for ${st.rtp.remembered.join(", ")}` : "rig not connected"}
+          </span>
+        )}
       </div>
       {canSend && (
         <div className="ks-keys" role="group" aria-label="Send a key to the rig">

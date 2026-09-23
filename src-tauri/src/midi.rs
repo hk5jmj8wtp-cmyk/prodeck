@@ -165,10 +165,26 @@ pub fn disconnect_midi(state: tauri::State<'_, MidiState>, app: AppHandle) {
 pub struct KeySendState(pub Mutex<serde_json::Value>);
 
 #[tauri::command]
-pub fn keysend_set_state(state: serde_json::Value, st: tauri::State<'_, KeySendState>, app: tauri::AppHandle) {
+pub fn keysend_set_state(mut state: serde_json::Value, st: tauri::State<'_, KeySendState>, app: tauri::AppHandle) {
+    // The rtpMIDI session keeper's view rides along (see netmidi.rs).
+    if let Some(o) = state.as_object_mut() {
+        o.insert("rtp".into(), crate::netmidi::netmidi_status());
+    }
     *st.0.lock().unwrap_or_else(|p| p.into_inner()) = state.clone();
     use tauri::Emitter;
     app.emit("keysend:state", state).ok();
+}
+
+/// The keeper saw the session's connection change: refresh the published
+/// state so the strip (booth and phones) shows it without waiting for a send.
+pub fn keysend_rtp_changed(app: &tauri::AppHandle) {
+    use tauri::{Emitter, Manager};
+    let st = app.state::<KeySendState>();
+    let mut g = st.0.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some(o) = g.as_object_mut() {
+        o.insert("rtp".into(), crate::netmidi::netmidi_status());
+        app.emit("keysend:state", g.clone()).ok();
+    }
 }
 
 #[tauri::command]

@@ -14,6 +14,7 @@ mod ga4;
 mod gemini;
 mod assist;
 mod midi;
+mod netmidi;
 mod ndi;
 mod obs;
 mod osc;
@@ -299,6 +300,7 @@ pub fn run() {
             }
             tap::spawn_heartbeat(app.handle().clone());
             avantis::spawn_mirror(app.handle().clone());
+            netmidi::spawn_keeper(app.handle().clone());
             avantis::spawn_watch_flush(app.handle().clone());
             obs::spawn_client(app.handle().clone());
             x32::spawn_mirror(app.handle().clone());
@@ -407,6 +409,7 @@ pub fn run() {
             midi::keysend_set_state,
             midi::keysend_state,
             midi::keysend_request,
+            netmidi::netmidi_status,
             // OSC
             osc::start_osc,
             osc::stop_osc,

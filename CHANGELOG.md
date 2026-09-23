@@ -46,6 +46,14 @@ numbers below are the ones shown in **Settings → Software Update**.
 
 ## Unreleased
 
+### New — the Waves key link reconnects itself after a restart
+
+Song Key → Waves rides a Network MIDI session to the Waves PC, and macOS
+forgot that connection every time either computer restarted. ProDeck now
+watches the session behind the key-send port, remembers the peer it saw
+connected, and asks it to connect again every 20 seconds until it answers.
+The Song Key strip shows a second chip: **→ Axis_One** or **waiting for …**.
+
 ### New — Routing is now a real map, and it answers "no sound?" on a phone
 
 The Routing page has been rebuilt around the one fact that survives every
