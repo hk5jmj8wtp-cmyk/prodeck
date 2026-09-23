@@ -187,6 +187,16 @@ describe("the walk", () => {
     map.nodes.find((n) => n.id === "src:ulxd4q-5-8:07")!.verified = NOW - 40 * 86_400_000;
     expect(walk(map, chId("39"), blind)!.verifiedAt).toBe(NOW - 40 * 86_400_000);
   });
+  it("walking to a place stops at the channels that feed it", () => {
+    const map = boothMap();
+    map.nodes.push({ id: "out:dante:39", kind: "output", label: "Dante out 39", transport: "dante" });
+    map.nodes.push({ id: "dest:waves", kind: "destination", label: "Waves" });
+    map.edges.push({ id: "e1", from: chId("39"), to: "out:dante:39" }, { id: "e2", from: "out:dante:39", to: "dest:waves" });
+    expect(traceUpstream(map, "dest:waves")).toEqual([chId("39"), "out:dante:39", "dest:waves"]);
+    const w = walk(map, "dest:waves", blind)!;
+    expect(w.steps.some((s) => /pack/i.test(s.text))).toBe(false);
+    expect(w.steps.some((s) => /Waves/.test(s.text))).toBe(true);
+  });
   it("a person is found by the desk key their mic is mapped to", () => {
     const map = boothMap();
     expect(channelsForDesk(map, "input:39").map((n) => n.id)).toEqual([chId("39")]);

@@ -650,13 +650,18 @@ const peakDb = (p: number) => (p > 0 ? 20 * Math.log10(p) : -Infinity);
 export function traceUpstream(map: RoutingMap, id: string): string[] {
   const seen = new Set<string>();
   const order: string[] = [];
+  // Walking to a place (an output or destination) stops at the channels and
+  // buses that feed it: "the stream is silent" is about the bus, the output
+  // and the box at the end, not about every singer's pack on the way.
+  const target = node(map, id);
+  const stopAtChannel = target?.kind === "output" || target?.kind === "destination";
   // `at` is the socket we arrived through. A door has every socket feeding
   // it; only the one this channel is patched from is on this channel's path.
   const visit = (nid: string, at?: string) => {
     if (seen.has(nid)) return;
     seen.add(nid);
     const n = node(map, nid);
-    if (n && n.kind !== "bus") {
+    if (n && n.kind !== "bus" && !(stopAtChannel && n.kind === "channel")) {
       for (const e of edgesInto(map, nid)) {
         if (n.kind === "door" && at && e.at && e.at !== at) continue;
         visit(e.from, e.at);
@@ -784,13 +789,27 @@ export function walk(map: RoutingMap, targetId: string, live: LiveView): WalkRes
     if (!seen) toWalk.push(n);
   }
 
-  // Order the walk: sources first (most likely, and the only place a person
-  // can actually do something), then doors, then the desk channel itself.
+  // Order the walk. For a channel: sources first (most likely, and the only
+  // place a person can actually do something), then doors, then the desk
+  // channel itself. For a place — an output or a destination — the other
+  // way round: the box at the end, then the output, then the buses and
+  // channels feeding it, which collapse into one desk check.
   const rank: Record<NodeKind, number> = { source: 0, door: 1, channel: 2, bus: 3, output: 4, destination: 5 };
-  toWalk.sort((a, b) => rank[a.kind] - rank[b.kind]);
+  const toPlace = target.kind === "output" || target.kind === "destination";
+  toWalk.sort((a, b) => (toPlace ? rank[b.kind] - rank[a.kind] : rank[a.kind] - rank[b.kind]));
   const twins = target.kind === "channel" ? twinsOf(map, target) : [];
   const stereo = isStereo(target.ref?.index);
+  const feeding = toPlace ? toWalk.filter((n) => n.kind === "channel") : [];
+  let feedingSaid = false;
   for (const n of toWalk) {
+    if (toPlace && n.kind === "channel" && feeding.length > 1) {
+      if (!feedingSaid) {
+        feedingSaid = true;
+        const nums = feeding.map((c) => c.ref?.index ?? c.label).join(", ");
+        steps.push({ n: 0, text: `On the desk: are channels ${nums} unmuted, faders up, and still sending to this output?`, nodeId: n.id });
+      }
+      continue;
+    }
     const own = stepsFor(map, n);
     own.forEach((text) => steps.push({ n: 0, text, nodeId: n.id }));
     for (const e of edgesOutOf(map, n.id).filter((x) => pathSet.has(x.to))) {

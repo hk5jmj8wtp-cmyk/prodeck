@@ -71,6 +71,13 @@ Maps saved by the old Routing page are converted on first open with every
 step kept, and nothing is written until you press Save. Until you paste your
 own list, the page shows a clearly-labelled sixteen-channel example.
 
+### Walking to a place reads from the far end
+
+Picking a destination or an output in **No sound?** — the stream, the lobby
+speakers, an outboard rig — now starts at the box itself, then the output,
+then one desk check covering every channel that feeds it. It used to trace
+each feeding channel all the way back to its pack and list every battery.
+
 ### Fixed — the sound meter could stay off for a whole service
 
 If the audio interface was restarting at the moment ProDeck launched (Dante
