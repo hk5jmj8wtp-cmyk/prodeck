@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { IS_DEMO, IS_WEB } from "../lib/tauri";
 import { askConfirm } from "../lib/dialogs";
 import { useRouting, useRoutingLive } from "../routingStore";
@@ -13,6 +13,7 @@ import {
   node,
   parsePatchList,
   removeChannel,
+  slug,
   STALE_AFTER_MS,
   stepsFor,
   toPatchList,
@@ -20,6 +21,12 @@ import {
   type RoutingMap,
   type Transport,
 } from "../lib/routing";
+import type { GraphFilter } from "../lib/routingLayout";
+
+// The node view pulls in React Flow + dagre (~200 KB). Only the booth's
+// Routing page ever needs it, so it is a separate chunk fetched on the first
+// visit to the Map tab — phones and the web viewer never download it.
+const RoutingGraph = lazy(() => import("../components/RoutingGraph"));
 
 // Routing — the building's signal map, as the table every sound tech already
 // has (CH · NAME · PORT · SOCKET · UPSTREAM) and as the walk a volunteer uses
@@ -30,7 +37,7 @@ import {
 // file has been read successfully once — a map a church typed in is not ours
 // to replace with a seed.
 
-type Tab = "channels" | "walk";
+type Tab = "channels" | "map" | "walk";
 
 const PORT_OPTIONS: { value: Transport | ""; label: string }[] = [
   { value: "", label: "— not patched" },
@@ -57,6 +64,7 @@ export function RoutingPage() {
   const [pasteText, setPasteText] = useState("");
   const [walkTarget, setWalkTarget] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [filter, setFilter] = useState<GraphFilter>("all");
 
   const map = draft ?? routing.map;
   const editing = draft !== null;
@@ -146,24 +154,27 @@ export function RoutingPage() {
   const pasted = pasteOpen ? parsePatchList(pasteText) : null;
 
   return (
-    <div className="page routing-page">
+    <div className={`page routing-page ${tab === "map" ? "map-tab" : ""}`}>
       <header className="page-head">
         <h1>Routing</h1>
         <div className="rt-tabs" role="tablist">
           <button className={tab === "channels" ? "on" : ""} onClick={() => setTab("channels")}>
             Channels
           </button>
+          <button className={tab === "map" ? "on" : ""} onClick={() => setTab("map")}>
+            Map
+          </button>
           <button className={tab === "walk" ? "on" : ""} onClick={() => setTab("walk")}>
             No sound?
           </button>
         </div>
         <span style={{ flex: 1 }} />
-        {tab === "channels" && CAN_EDIT && !editing && (
+        {tab !== "walk" && CAN_EDIT && !editing && (
           <button className="btn small ghost" onClick={() => setDraft(clone(map))}>
             Edit
           </button>
         )}
-        {tab === "channels" && editing && (
+        {tab !== "walk" && editing && (
           <>
             <button className="btn small ghost" onClick={cancel}>
               Cancel
@@ -185,6 +196,71 @@ export function RoutingPage() {
         <div className="banner rt-note">
           <strong>This is the example map</strong> that ships with ProDeck — a sixteen-channel church that isn't yours. Press Edit, then <strong>Paste patch list</strong> with your own channels, and it is replaced.
         </div>
+      )}
+
+      {tab === "map" && (
+        <Suspense fallback={<p className="muted small">Loading the map view…</p>}>
+          <RoutingGraph
+            map={map}
+            live={live}
+            editing={editing}
+            filter={filter}
+            onFilter={setFilter}
+            onMove={(id, pos) =>
+              mutate((m) => {
+                const n = node(m, id);
+                if (n) n.pos = { x: Math.round(pos.x), y: Math.round(pos.y) };
+              })
+            }
+            onConnect={(from, to, at) =>
+              mutate((m) => {
+                const a = node(m, from);
+                const b = node(m, to);
+                if (!a || !b) return;
+                const transport = a.kind === "door" ? a.transport : b.kind === "door" ? b.transport : b.kind === "output" ? b.transport : a.kind === "output" ? a.transport : undefined;
+                const id = `e:${from}>${to}${at ? "@" + at : ""}`;
+                if (m.edges.some((e) => e.id === id)) return;
+                m.edges.push({ id, from, to, at, transport });
+                m.example = false;
+              })
+            }
+            onDeleteEdges={(ids) => mutate((m) => void (m.edges = m.edges.filter((e) => !ids.includes(e.id))))}
+            onDeleteNodes={(ids) =>
+              mutate((m) => {
+                for (const id of ids) {
+                  const n = node(m, id);
+                  if (!n) continue;
+                  if (n.kind === "channel") removeChannel(m, id);
+                  else {
+                    m.edges = m.edges.filter((e) => e.from !== id && e.to !== id);
+                    m.nodes = m.nodes.filter((x) => x.id !== id);
+                  }
+                }
+              })
+            }
+            onAddNode={(kind, label) =>
+              mutate((m) => {
+                // No `pos`: an unpinned node lands in its column by layout,
+                // whichever filter is showing when it is added.
+                if (kind === "channel") {
+                  applyRow(m, { ch: label, name: "" });
+                  return;
+                }
+                const base = `${kind === "source" ? "src" : kind === "destination" ? "dest" : kind === "output" ? "out" : kind}:${slug(label)}`;
+                let id = base;
+                for (let i = 2; node(m, id); i++) id = `${base}-${i}`;
+                m.nodes.push({ id, kind, label, sourceKind: kind === "source" ? "other" : undefined, transport: kind === "door" ? "other" : undefined });
+                m.example = false;
+              })
+            }
+            onWalk={(id) => {
+              const n = node(map, id);
+              if (!n) return;
+              setWalkTarget(n.kind === "door" || n.kind === "bus" ? (edgesInto(map, id)[0]?.from ?? id) : id);
+              setTab("walk");
+            }}
+          />
+        </Suspense>
       )}
 
       {tab === "walk" && (

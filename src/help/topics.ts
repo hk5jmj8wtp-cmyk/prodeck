@@ -731,6 +731,26 @@ To build yours:
     related: ["routing-walk", "console"],
   },
   {
+    id: "routing-graph",
+    group: "Sound console",
+    title: "Drawing the map",
+    aliases: ["node view", "routing map picture", "boxes and lines", "signal flow diagram", "connect socket to channel by dragging", "only dante", "only slink"],
+    body: `**Routing → Map** draws the same map as boxes and lines: sources on the left, then the doors they come in through, console channels, buses, outputs and finally what the outputs drive. Colour is the door — amber SLink, blue Dante, green Local — and the number on each line is the socket.
+
+Everything is laid out by kind, not by hand. New things always land in their column, so the picture stays readable as the map grows. Drag a node to nudge it and the nudge is remembered (a small dot marks it); everything else stays put.
+
+- **Only SLink · Only Dante · Only Local** show one door's world at a time, the way you'd read it standing at the wall or in Dante Controller. **Show all** is the whole building.
+- **Live:** a muted channel turns amber and says so; an open one shows its fader. A dashed box or line is marked dead. A dotted one has never been verified. A glowing line has signal ProDeck can hear on its own input.
+- **Double-click** any box to walk it — the same walk a phone gets.
+
+To change the map, press **Edit** first:
+1. Drag from a box's right-hand port to another box's left-hand port to connect them. Only sensible links are allowed (a source into a door, a door into a channel, a channel into a bus, and so on). A link into a door or channel asks for the socket number.
+2. Select a box or line and press Delete to remove it.
+3. **Add** puts a new source, door, channel, bus, output or destination at the bottom of its column.
+4. **Save.** The table and the phones see the same map — it is one map, three views.`,
+    related: ["routing-map", "routing-walk"],
+  },
+  {
     id: "routing-walk",
     group: "Troubleshooting",
     title: "When something has no sound",

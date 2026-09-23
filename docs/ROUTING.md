@@ -67,6 +67,23 @@ will ever be.
 Known faults with a symptom — "synth L and R come from different machines".
 If a walk crosses one, it shows before anything else.
 
+## The map as a picture
+
+**Routing → Map** draws the same map as boxes and lines: sources → doors →
+channels → buses → outputs → destinations, one column each. Colour is the
+door (amber SLink, blue Dante, green Local); the number on a line is the
+socket. Layout is by kind, never by hand — nudge a box and only that box
+moves. *Only SLink / Only Dante / Only Local* show one door's world.
+
+Live paint: muted channels turn amber, open ones show their fader, dead
+sockets are dashed, unverified hops dotted, and a line glows when ProDeck
+hears signal on its own input. Double-click a box to walk it.
+
+In Edit: drag right-port → left-port to connect (kinds decide what may
+connect; a link into a door or channel asks for the socket), select + Delete
+to remove, **Add** for a new node in its column, then Save. The node view is
+a separate download the phones never fetch.
+
 ## The walk
 
 **Phone: Home → No sound?** **Booth: Routing → No sound?**
@@ -96,5 +113,5 @@ nothing is written until you press Save.
 ## What is deliberately not here
 
 - Any AI reasoning over the map. A model will confidently invent a socket.
-- Free-form canvas placement. The node view (coming) lays out by kind.
+- Free-form canvas placement. The node view lays out by kind; a nudge moves one box.
 - Reading A&H input patching over MIDI — the protocol does not expose it.

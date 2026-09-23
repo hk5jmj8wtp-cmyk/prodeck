@@ -71,7 +71,26 @@ Maps saved by the old Routing page are converted on first open with every
 step kept, and nothing is written until you press Save. Until you paste your
 own list, the page shows a clearly-labelled sixteen-channel example.
 
-Help: *Building your routing map* and *When something has no sound*.
+### New — Routing → Map draws it
+
+The same map as boxes and lines, laid out by kind: sources, doors, channels,
+buses, outputs, destinations, one column each, so it stays readable however
+big the building. Colour is the door — amber SLink, blue Dante, green Local —
+and every line carries its socket number. **Only SLink / Only Dante / Only
+Local** show one door's world at a time, the way the sheet on the wall does.
+
+It is live: a muted channel turns amber, an open one shows its fader, dead
+sockets are dashed, hops nobody has verified are dotted, and a line glows
+when ProDeck hears signal on its own input. Double-click a box to walk it.
+
+In Edit, drag port to port to connect (only sensible links are allowed, and
+a link into a door or channel asks for the socket), Delete removes, **Add**
+drops a new box into its column, and a dragged box remembers its nudge. One
+map, three views: the table, the picture and the phone walk all read and
+write the same file. The picture is a separate download phones never fetch.
+
+Help: *Building your routing map*, *Drawing the map* and *When something has
+no sound*.
 
 ## 0.9.95 — 23 September 2026
 

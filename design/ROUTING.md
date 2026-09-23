@@ -201,6 +201,10 @@ mirrors them for GitHub readers.
   shared), `mobile/CrewWalk.tsx` (Home → No sound?, More → No sound?).
   Booth saves emit `routing:changed`; phones re-read. Help topics
   `routing-map` and `routing-walk`; `docs/ROUTING.md` mirrors them.
+- **Phase 2 built 2026-09-23**: `src/lib/routingLayout.ts` (fixed columns by
+  kind, dagre for in-column order, filters, live paint, connect rules — 11
+  tests) + `components/RoutingGraph.tsx` (React Flow, lazy chunk, booth-only).
+  Nudge/connect/delete/add go through the page draft and Save.
 - Cornerstone's Bible is transcribed onto the booth's `routing.json`
   (64 channels, 49 sources, 3 doors, 10 buses, 15 outputs, 8 destinations,
   8 watchlist items) from a one-off script kept outside the repo at

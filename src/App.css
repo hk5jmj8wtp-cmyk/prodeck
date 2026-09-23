@@ -8564,3 +8564,273 @@ select.input {
   font-size: 13px;
   padding: 8px 12px;
 }
+
+/* ---------------------------------------------------------------------
+   Routing — the node view (React Flow). Colour is the door, as in the
+   Bible: amber SLink, blue Dante, green Local. Dashed = dead, dotted =
+   unverified, animated = live signal. */
+.routing-page.map-tab {
+  max-width: none;
+}
+.rg-wrap {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 210px);
+  min-height: 480px;
+}
+.rg-wrap .react-flow {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  background: var(--panel);
+  overflow: hidden;
+}
+.rg-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.rg-toolbar .rg-hint {
+  font-size: 11px;
+}
+.rg-wrap .react-flow {
+  --xy-background-color: var(--panel);
+  --xy-background-pattern-color: var(--border-soft);
+  --xy-edge-stroke: var(--muted);
+  --xy-edge-stroke-selected: var(--accent-hi);
+  --xy-controls-button-background-color: var(--surface);
+  --xy-controls-button-background-color-hover: var(--panel-2, var(--surface));
+  --xy-controls-button-color: var(--text);
+  --xy-controls-button-border-color: var(--border);
+  --xy-selection-background-color: var(--accent-soft);
+  --xy-selection-border: 1px solid var(--accent-line);
+}
+.rg-node {
+  position: relative;
+  box-sizing: border-box;
+  padding: 6px 10px 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.25;
+}
+.rg-node.selected {
+  box-shadow: 0 0 0 2px var(--accent-line);
+}
+.rg-node-label {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rg-node-sub {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+.rg-node.k-source {
+  border-left-color: var(--muted);
+}
+.rg-node.k-door {
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+}
+.rg-node.k-channel {
+  border-left-color: var(--good);
+}
+.rg-node.k-bus {
+  border-left-color: #b489f2;
+}
+.rg-node.k-output {
+  border-left-color: var(--warn);
+}
+.rg-node.k-destination {
+  border-left-color: var(--text);
+  border-style: solid;
+}
+.rg-node.dead {
+  border-style: dashed;
+  color: var(--muted);
+}
+.rg-node.unverified {
+  border-right-style: dotted;
+  border-top-style: dotted;
+  border-bottom-style: dotted;
+}
+.rg-node.muted {
+  background: var(--warn-soft);
+}
+.rg-node.muted .rg-node-sub {
+  color: var(--warn);
+}
+.rg-node.signal {
+  box-shadow: 0 0 0 1px var(--good);
+}
+.rg-node.pinned::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent-hi);
+}
+.rg-dot {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--good);
+  box-shadow: 0 0 8px var(--good);
+}
+.rg-port.react-flow__handle {
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--border-hi);
+  background: var(--panel);
+}
+.react-flow__edge.rg-edge path,
+.rg-edge {
+  stroke-width: 1.4;
+}
+.react-flow__edge .rg-edge.t-slink {
+  stroke: #c98a2b;
+}
+.react-flow__edge .rg-edge.t-dante {
+  stroke: var(--accent-hi);
+}
+.react-flow__edge .rg-edge.t-local {
+  stroke: var(--good);
+}
+.react-flow__edge .rg-edge.t-me {
+  stroke: #b489f2;
+}
+.react-flow__edge .rg-edge.dead {
+  stroke-dasharray: 6 5;
+  opacity: 0.6;
+}
+.react-flow__edge .rg-edge.unverified {
+  stroke-dasharray: 2 4;
+}
+.react-flow__edge .rg-edge.live {
+  stroke: var(--good);
+  stroke-width: 2.2;
+}
+.react-flow__edge .rg-edge.selected {
+  stroke: var(--accent-hi);
+  stroke-width: 2.4;
+}
+.rg-edge-label {
+  position: absolute;
+  pointer-events: none;
+  font-size: 9.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  color: var(--muted);
+}
+.rg-edge-label.t-slink {
+  color: #c98a2b;
+}
+.rg-edge-label.t-dante {
+  color: var(--accent-hi);
+}
+.rg-edge-label.t-local {
+  color: var(--good);
+}
+.rg-filters,
+.rg-add {
+  display: inline-flex;
+  gap: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+  align-items: center;
+}
+.rg-filters button,
+.rg-add button {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.rg-filters button.on {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.rg-add button:hover {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.rg-add-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  padding: 0 6px 0 10px;
+}
+.rg-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 10px;
+  max-width: calc(100% - 80px);
+}
+.rg-leg::before {
+  content: "";
+  display: inline-block;
+  width: 18px;
+  height: 0;
+  border-top: 2px solid var(--muted);
+  margin-right: 5px;
+  vertical-align: middle;
+}
+.rg-leg.t-slink::before {
+  border-color: #c98a2b;
+}
+.rg-leg.t-dante::before {
+  border-color: var(--accent-hi);
+}
+.rg-leg.t-local::before {
+  border-color: var(--good);
+}
+.rg-leg.dashed::before {
+  border-top-style: dashed;
+}
+.rg-leg.dotted::before {
+  border-top-style: dotted;
+}
+.rg-leg.live::before {
+  border-color: var(--good);
+  border-top-width: 3px;
+}
+.rg-hint {
+  margin-left: auto;
+  color: var(--faint);
+}
