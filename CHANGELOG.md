@@ -44,7 +44,7 @@ numbers below are the ones shown in **Settings → Software Update**.
 
 ---
 
-## Unreleased
+## 0.9.95 — 23 September 2026
 
 ### Fixed — after an update installed, ProDeck didn't come back
 
