@@ -95,6 +95,10 @@ It is live: a muted channel turns amber, an open one shows its fader, dead
 sockets are dashed, hops nobody has verified are dotted, and a line glows
 when ProDeck hears signal on its own input. Double-click a box to walk it.
 
+The view fits the columns to the window and reads top to bottom like the
+sheet on the wall: scroll to move down it, ⌘-scroll or pinch to zoom, **Fit**
+to come back. Live changes repaint only the box that changed.
+
 In Edit, drag port to port to connect (only sensible links are allowed, and
 a link into a door or channel asks for the socket), Delete removes, **Add**
 drops a new box into its column, and a dragged box remembers its nudge. One
