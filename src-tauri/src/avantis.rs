@@ -31,6 +31,15 @@ pub struct AvantisInner {
     /// 1-based scene number (bank*128 + program + 1).
     pub scene: Option<u32>,
     pub mutes: HashMap<String, bool>,
+    /// When the DESK last reported each mute (epoch ms). The Avantis protocol
+    /// has no "get mute", so a value that predates `connected_at` is only
+    /// remembered from the cache — the UI shows it as unconfirmed and alerts
+    /// don't act on it. Persisted with the cache.
+    pub mute_seen: HashMap<String, u64>,
+    /// When the current connection came up (epoch ms); None while offline.
+    pub connected_at: Option<u64>,
+    /// When the desk last announced a scene recall (epoch ms). Persisted.
+    pub scene_at: Option<u64>,
     /// Raw 0-127 fader values (dB = value/127*64 - 54, per the protocol table).
     pub faders: HashMap<String, u8>,
     pub names: HashMap<String, String>,
@@ -106,6 +115,9 @@ pub fn snapshot(state: &AvantisState) -> Value {
         "connected": s.connected,
         "scene": s.scene,
         "mutes": s.mutes,
+        "muteSeen": s.mute_seen,
+        "connectedAt": s.connected_at,
+        "sceneAt": s.scene_at,
         "faders": s.faders,
         "names": s.names,
         "watchLog": s.watch_log.iter().rev().take(20).collect::<Vec<_>>(),
@@ -298,6 +310,7 @@ pub fn pretty_key(key: &str) -> String {
 /// records only real changes to setup controls (never the connect baseline).
 pub(crate) fn apply_mute(s: &mut AvantisInner, kk: String, muted: bool) -> bool {
     let old = s.mutes.insert(kk.clone(), muted);
+    s.mute_seen.insert(kk.clone(), now_ms());
     if old.is_some() && old != Some(muted) && is_setup_key(&kk) {
         watch_record(
             s,
@@ -469,6 +482,7 @@ impl Parser {
                     let scene = bank * 128 + d[0] as u32 + 1;
                     let mut s = st.lock().unwrap_or_else(|p| p.into_inner());
                     let old = s.scene.replace(scene);
+                    s.scene_at = Some(now_ms());
                     if let Some(o) = old {
                         if o != scene {
                             watch_record(
@@ -538,6 +552,13 @@ impl Parser {
 // stays true across app restarts. Cache the mirror to disk so a relaunch
 // starts knowing, instead of blind until every mute is touched again.
 
+pub(crate) fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 fn cache_path() -> std::path::PathBuf {
     let mut d = dirs::config_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
     d.push("ProDeck");
@@ -561,6 +582,17 @@ fn load_cache(state: &AvantisState) {
             s.mutes.entry(k).or_insert(b);
         }
     }
+    for (k, val) in take("mute_seen") {
+        if let Some(n) = val.as_u64() {
+            s.mute_seen.entry(k).or_insert(n);
+        }
+    }
+    if let Some(n) = v.get("scene").and_then(|x| x.as_u64()) {
+        s.scene.get_or_insert(n as u32);
+    }
+    if let Some(n) = v.get("scene_at").and_then(|x| x.as_u64()) {
+        s.scene_at.get_or_insert(n);
+    }
     for (k, val) in take("faders") {
         if let Some(n) = val.as_u64() {
             s.faders.entry(k).or_insert(n as u8);
@@ -581,7 +613,7 @@ fn load_cache(state: &AvantisState) {
 fn save_cache(state: &AvantisState) {
     let json = {
         let s = state.lock().unwrap_or_else(|p| p.into_inner());
-        json!({ "mutes": s.mutes, "faders": s.faders, "names": s.names, "colors": s.colors })
+        json!({ "mutes": s.mutes, "mute_seen": s.mute_seen, "scene": s.scene, "scene_at": s.scene_at, "faders": s.faders, "names": s.names, "colors": s.colors })
             .to_string()
     };
     let path = cache_path();
@@ -612,7 +644,11 @@ fn set_connected(app: &AppHandle, state: &AvantisState, up: bool) {
         let mut s = state.lock().unwrap_or_else(|p| p.into_inner());
         let was = s.connected;
         s.connected = up;
+        if up && !was {
+            s.connected_at = Some(now_ms());
+        }
         if !up {
+            s.connected_at = None;
             // Keep mutes/faders: the desk is solid-state at this church (they
             // save, never recall), so last-known values stay the best guess
             // across a reconnect — live traffic corrects any drift.

@@ -71,6 +71,30 @@ Maps saved by the old Routing page are converted on first open with every
 step kept, and nothing is written until you press Save. Until you paste your
 own list, the page shows a clearly-labelled sixteen-channel example.
 
+### Fixed — a mute ProDeck only remembered could show as fact
+
+The Avantis can't be asked whether a channel is muted; ProDeck learns a mute
+when the desk changes it and remembers it across restarts. So after a restart
+a channel could read **MUTED** on ProDeck while the desk was open, until
+someone pressed the mute twice. Now a mute the desk hasn't confirmed since it
+connected shows as **MUTED?** with a dashed outline, the muted-mic alerts only
+fire on confirmed mutes, and the troubleshooter says "ProDeck's last record
+says…" instead of stating it. Tapping the mute once on the desk confirms it.
+
+### New — the Sound Desk tile knows whether Waves is on
+
+Tell ProDeck which console scenes switch your outboard rig on and off
+(**Settings → Sound Console**) and the desk tile shows **Waves ON / OFF** from
+the last scene recall the desk announced, the troubleshooter knows it, and an
+alert appears if it is off within 90 minutes of a service — sound quality
+changes a lot with it off.
+
+### Ask ProDeck keeps the conversation while you look around
+
+Tapping a link in an answer, switching to the Map, or reloading the phone
+used to clear the chat. It now stays until you press **Start over** or close
+the app.
+
 ### New — Ask ProDeck: describe the problem, get walked to the fix
 
 A volunteer alone at 9am can now type what is wrong in their own words —

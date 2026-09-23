@@ -146,6 +146,14 @@ describe("the walk", () => {
     const w = walk(boothMap(), chId("39"), desk({ mutes: { "input:39": true } }))!;
     expect(w.checks[0]).toMatchObject({ state: "bad", fix: "Unmute channel 39." });
   });
+  it("a remembered mute is a question, not a ✗", () => {
+    const w = walk(boothMap(), chId("39"), desk({ mutes: { "input:39": true }, confirmed: {} }))!;
+    expect(w.checks[0].state).toBe("unknown");
+    expect(w.checks[0].text).toMatch(/last record says channel 39 is muted/);
+    // Once the desk confirms it, it is a ✗ with a fix.
+    const c = walk(boothMap(), chId("39"), desk({ mutes: { "input:39": true }, confirmed: { "input:39": true } }))!;
+    expect(c.checks[0]).toMatchObject({ state: "bad", fix: "Unmute channel 39." });
+  });
   it("a fader at the bottom is a ✗ too", () => {
     const w = walk(boothMap(), chId("39"), desk({ faders: { "input:39": -90 } }))!;
     expect(w.checks[0].state).toBe("bad");

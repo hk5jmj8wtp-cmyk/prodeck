@@ -688,6 +688,20 @@ export function SettingsPage() {
               }}
             />
           </label>
+          <label className="field">
+            <span>Scene that turns the outboard rig (Waves) ON</span>
+            <input className="input" type="number" min={0} value={form.avantis_waves_on_scene ?? 0} onChange={(e) => set("avantis_waves_on_scene", Math.max(0, parseInt(e.target.value || "0", 10)))} />
+          </label>
+          <label className="field">
+            <span>Scene that turns it OFF (0 = not used)</span>
+            <input className="input" type="number" min={0} value={form.avantis_waves_off_scene ?? 0} onChange={(e) => set("avantis_waves_off_scene", Math.max(0, parseInt(e.target.value || "0", 10)))} />
+          </label>
+          <p className="muted small" style={{ gridColumn: "1 / -1", margin: 0 }}>
+            The desk announces every scene recall. With these two set, the Sound Desk tile shows <strong>Waves ON / OFF</strong>,
+            the troubleshooter knows it, and an alert appears if Waves is off within 90 minutes of a service. Mutes ProDeck only
+            remembers from before the desk connected show with a <strong>?</strong> — the console can't be asked for its mute state,
+            so tap a mute once on the desk to confirm it.
+          </p>
         </div>
       </section>
 

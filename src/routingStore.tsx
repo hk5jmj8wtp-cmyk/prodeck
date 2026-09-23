@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useAlerts } from "./alertsStore";
 import { avantisState, IS_WEB, loadRouting, on, saveRouting, type AvantisSnapshot, type Json } from "./lib/tauri";
 import { exampleMap, normalizeMap, type LiveView, type RoutingMap } from "./lib/routing";
+import { confirmedMutes } from "./lib/deskConfidence";
 
 // The routing map: loaded once, shared by the Routing page, the walk on the
 // booth and the walk on every phone. The booth owns routing.json; web clients
@@ -133,7 +134,7 @@ export function useRoutingLive(): LiveView {
     if (!desk) return null;
     const faders: Record<string, number> = {};
     for (const [k, v] of Object.entries(desk.faders ?? {})) faders[k] = v === 0 ? -Infinity : (v / 127) * 64 - 54;
-    return { connected: desk.connected, mutes: desk.mutes ?? {}, faders, names: desk.names ?? {} };
+    return { connected: desk.connected, mutes: desk.mutes ?? {}, confirmed: confirmedMutes(desk), faders, names: desk.names ?? {}, scene: desk.scene ?? null };
   }, [desk]);
 
   // A new object only when something it holds has actually changed (or the

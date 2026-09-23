@@ -326,6 +326,8 @@ export interface Settings {
   avantis_port: number;
   avantis_midi_base: number;
   avantis_scene_labels: Record<string, string>;
+  avantis_waves_on_scene: number;
+  avantis_waves_off_scene: number;
   avantis_softkeys: AvantisSoftkey[];
   /** Lobby TVs auto-restore: booth watchdog re-triggers this playlist item
    *  whenever the announcements layer is empty. Empty playlist = off. */
@@ -357,7 +359,13 @@ export interface AvantisSnapshot {
   maxScene?: number;
   connected: boolean;
   scene: number | null;
+  /** Epoch ms of the last scene recall the desk announced. */
+  sceneAt?: number | null;
   mutes: Record<string, boolean>;
+  /** Epoch ms the DESK last reported each mute. Older than connectedAt =
+   *  remembered from the cache, not confirmed this connection. */
+  muteSeen?: Record<string, number>;
+  connectedAt?: number | null;
   faders: Record<string, number>;
   names: Record<string, string>;
   colors: Record<string, number>;

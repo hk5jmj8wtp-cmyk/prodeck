@@ -163,6 +163,10 @@ pub struct Settings {
     /// Local names for desk scenes ("1" → "Pre-service") — the protocol only
     /// carries numbers, so the labels live here.
     pub avantis_scene_labels: std::collections::HashMap<String, String>,
+    /// Scenes that switch an outboard processing rig (Waves) on and off, so
+    /// ProDeck can say which state the desk is in from the last recall. 0 = unset.
+    pub avantis_waves_on_scene: u32,
+    pub avantis_waves_off_scene: u32,
     /// Desk softkeys → crew pages. A softkey configured on the Avantis to send
     /// a custom MIDI note (on a channel OUTSIDE the base..base+4 range, so it
     /// can never read as a mute) fires a page to the mapped crew.
@@ -276,6 +280,8 @@ impl Default for Settings {
             avantis_port: 51325,
             avantis_midi_base: 12,
             avantis_scene_labels: std::collections::HashMap::new(),
+            avantis_waves_on_scene: 0,
+            avantis_waves_off_scene: 0,
             avantis_softkeys: Vec::new(),
             lobby_auto_playlist: String::new(),
             lobby_auto_index: 0,

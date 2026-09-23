@@ -10,6 +10,7 @@ import {
 import { useProDeck } from "./store";
 import { usePco , isDeclined } from "./pcoStore";
 import { useChecklists } from "./checklistStore";
+import { confirmedMutes, wavesState, fmtSince } from "./lib/deskConfidence";
 import { avantisState, on } from "./lib/tauri";
 import { describeAlert, hasSignal, micAlerts, micPhase, type WatchedMic } from "./lib/micCheck";
 
@@ -48,6 +49,8 @@ export interface AlertConfig {
   /// A person is scheduled on a mic, the service window is live, and that
   /// mic's desk channel is muted.
   micMuted: boolean;
+  /** The outboard rig (Waves) was switched off by a scene recall near or during a service. */
+  wavesOff: boolean;
   /// A scheduled mic is OPEN at the desk but carrying no signal — a dead
   /// battery, an unplugged XLR, a capsule that failed. `micMuted` cannot see
   /// any of those: the channel is unmuted, so the desk believes it is fine.
@@ -74,6 +77,7 @@ const DEFAULT_CONFIG: AlertConfig = {
   ppDisconnect: true,
   tapPushFail: true,
   micMuted: true,
+  wavesOff: true,
   micSilent: true,
 };
 
@@ -133,6 +137,7 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
   const ndi = useRef<Map<string, NdiStat>>(new Map());
   const avantisUp = useRef(false);
   const avantisMutes = useRef<Record<string, boolean>>({});
+  const avantisScene = useRef<{ scene: number | null; at: number | null }>({ scene: null, at: null });
   const tapFail = useRef<{ ts: number; message: string } | null>(null);
   const muted = useRef<Set<string>>(new Set());
   const conds = useRef<Map<string, Alert>>(new Map());
@@ -178,7 +183,10 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
       "avantis:state",
       (s) => {
         avantisUp.current = !!s.connected;
-        avantisMutes.current = s.mutes ?? {};
+        // Only mutes the desk has confirmed this connection — a remembered
+        // mute raised "Mic 3 is muted" while the desk plainly wasn't.
+        avantisMutes.current = confirmedMutes(s as any);
+        avantisScene.current = { scene: (s as any).scene ?? null, at: (s as any).sceneAt ?? null };
       },
     );
     // Status only fires on change — a client that loads after the desk
@@ -186,7 +194,8 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
     avantisState()
       .then((s) => {
         avantisUp.current = !!s.connected;
-        avantisMutes.current = s.mutes ?? {};
+        avantisMutes.current = confirmedMutes(s);
+        avantisScene.current = { scene: s.scene ?? null, at: s.sceneAt ?? null };
       })
       .catch(() => {});
     return () => {
@@ -325,6 +334,24 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
       if (tapFail.current && now - tapFail.current.ts > TAP_FAIL_TTL) tapFail.current = null;
       if (cfg.enabled && cfg.tapPushFail && tapFail.current)
         active.set("tap:push", { severity: "crit", message: tapFail.current.message });
+
+      // The Waves rig switched off by a scene recall. Sound quality changes a
+      // lot with it off, so around a service that is worth a banner even
+      // though nothing is "broken".
+      {
+        const onS = p.settings?.avantis_waves_on_scene ?? 0;
+        const offS = p.settings?.avantis_waves_off_scene ?? 0;
+        const ws = wavesState(avantisScene.current.scene, onS, offS);
+        const startTs = pc.serviceTimes?.find((t: any) => t.id === pc.selectedServiceTimeId)?.ts || null;
+        const nearService = !!startTs && now >= startTs - 90 * 60_000 && now <= startTs + 2 * 3600_000;
+        if (cfg.enabled && cfg.wavesOff && avantisUp.current && ws === "off" && nearService) {
+          const when = fmtSince(avantisScene.current.at, now);
+          active.set("desk:waves-off", {
+            severity: "warn",
+            message: `Waves is OFF on the desk (scene ${offS}${when ? ` recalled ${when}` : ""}) — vocals and the stream are running without Waves processing. Recall scene ${onS} to bring it back.`,
+          });
+        }
+      }
 
       // A scheduled mic muted on the desk. No time window — if someone is on
       // the plan and their mapped channel is muted, say so; the banner is

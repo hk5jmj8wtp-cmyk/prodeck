@@ -36,6 +36,8 @@ export interface AssistStatusCtx {
   meterRunning: boolean;
   /** Planning Center plan / service label if one is selected. */
   service?: string;
+  /** Outboard rig state from the last scene recall, when the church has configured the scenes. */
+  waves?: "on" | "off" | "unknown";
 }
 
 export interface AssistCtx {
@@ -117,6 +119,7 @@ function channelInfo(ctx: AssistCtx, n: RNode) {
     name: n.label || null,
     desk_name: key && desk ? (desk.names[key] ?? "").trim() || null : null,
     muted: key && desk ? desk.mutes[key] === true : null,
+    mute_confidence: key && desk ? (desk.mutes[key] === undefined ? "unknown" : desk.confirmed ? (key in desk.confirmed ? "confirmed" : "remembered") : "confirmed") : null,
     fader_db: key && desk && typeof desk.faders[key] === "number" ? (desk.faders[key] === -Infinity ? "-inf" : Math.round(desk.faders[key])) : null,
     door: row?.doorLabel || null,
     door_socket: row?.socket || null,
@@ -181,6 +184,8 @@ export function runTool(ctx: AssistCtx, name: string, input: Record<string, unkn
         desk_connected: ctx.status.deskConnected,
         propresenter_connected: ctx.status.ppConnected,
         meter_running: ctx.status.meterRunning,
+        waves_rig: ctx.status.waves ?? "unknown",
+        last_scene: ctx.live.desk?.scene ?? null,
         service: ctx.status.service ?? null,
         people_on_mics: ctx.people.map((p) => ({ person: p.name, position: p.position, mic: p.mic, channels: p.channelIds.map((id) => node(ctx.map, id)?.ref?.index ?? id) })),
         map_verified: ageText(ctx.map.verified?.at, ctx.live.now),
@@ -221,6 +226,9 @@ export function buildSystem(ctx: AssistCtx): string {
     `Desk mirror: ${ctx.status.deskConnected ? "connected (mutes, faders and names are live)" : "NOT connected — mute and fader state is unknown"}.`,
     `ProPresenter: ${ctx.status.ppConnected ? "connected" : "not connected"}.`,
     `Booth audio meter: ${ctx.status.meterRunning ? "running" : "not running"}.`,
+    ctx.status.waves && ctx.status.waves !== "unknown" ? `Outboard rig (Waves): ${ctx.status.waves.toUpperCase()} according to the last scene recall${ctx.live.desk?.scene ? ` (scene ${ctx.live.desk.scene})` : ""}.` : "",
+    // Remembered mutes are guesses: say so once so the model doesn't assert them.
+    ctx.live.desk?.confirmed ? `Desk mutes: the tools mark a mute as confirmed only if the desk reported it since connecting; treat others as "last remembered".` : "",
     ctx.status.service ? `Service selected: ${ctx.status.service}.` : "",
     ctx.people.length ? `On mics this week: ${ctx.people.map((p) => `${p.name} (${p.position}, mic ${p.mic}${p.channelIds.length ? " → " + p.channelIds.map((id) => node(ctx.map, id)?.ref?.index ?? id).join("/") : ""})`).join("; ")}.` : "No mic assignments are known for this week.",
     `The person asking is ${ctx.asker === "phone" ? "a volunteer on a phone, probably not at the desk" : "at the booth"}.`,

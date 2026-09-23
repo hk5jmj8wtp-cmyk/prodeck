@@ -607,8 +607,13 @@ export function migrateChains(chains: LegacyChain[]): RoutingMap {
 export interface DeskView {
   connected: boolean;
   mutes: Record<string, boolean>;
+  /** Mutes the desk has reported since this connection. When present, a mute
+   *  in `mutes` but not here is only remembered from before — a guess, not a fact. */
+  confirmed?: Record<string, boolean>;
   faders: Record<string, number>;
   names: Record<string, string>;
+  /** Last scene the desk announced, if any. */
+  scene?: number | null;
 }
 
 export interface LiveView {
@@ -740,13 +745,24 @@ export function walk(map: RoutingMap, targetId: string, live: LiveView): WalkRes
         const name = (desk.names[key] ?? "").trim();
         const who = name ? ` (“${name}” on the desk)` : "";
         const fader = desk.faders[key];
-        if (desk.mutes[key] === true) {
+        // A remembered mute (from before the desk reconnected) is exactly the
+        // thing that showed "muted" on ProDeck while the desk was open. Say
+        // what we remember, but send them to look, and don't call it a fact.
+        const remembered = !!desk.confirmed && !(key in desk.confirmed) && desk.mutes[key] !== undefined;
+        if (remembered && desk.mutes[key] === true) {
+          checks.push({
+            state: "unknown",
+            text: `ProDeck's last record says channel ${num} is muted${who}, but the desk hasn't confirmed that since it reconnected — look at the mute button on ${num} first.`,
+            nodeId: n.id,
+          });
+        } else if (desk.mutes[key] === true) {
           checks.push({ state: "bad", text: `Channel ${num} is muted on the desk${who}.`, fix: `Unmute channel ${num}.`, nodeId: n.id });
         } else if (typeof fader === "number" && fader <= FADER_DOWN_DB) {
           checks.push({ state: "bad", text: `Channel ${num} is open but its fader is all the way down${who}.`, fix: `Bring channel ${num}'s fader up.`, nodeId: n.id });
         } else {
           const f = typeof fader === "number" ? `, fader at ${fmtDb(fader)}` : "";
-          checks.push({ state: "ok", text: `Channel ${num} is open${f}${who}.`, nodeId: n.id });
+          const asSeen = remembered ? " (as last seen — the desk hasn't confirmed it since reconnecting)" : "";
+          checks.push({ state: "ok", text: `Channel ${num} is open${f}${who}${asSeen}.`, nodeId: n.id });
         }
         if (n.kind === "channel") {
           for (const t of twinsOf(map, n)) {

@@ -1965,6 +1965,8 @@ const KIND_LABEL: Record<string, string> = {
 };
 const KIND_ORDER = ["main", "dca", "input", "grp", "sgrp", "aux", "saux", "mtx", "smtx", "fxs", "sfxs", "fxr", "ufxs", "ufxr", "mgrp"];
 
+import { fmtSince, muteConfidence, wavesState } from "../lib/deskConfidence";
+
 function faderDb(v: number): string {
   const db = (v / 127) * 64 - 54;
   if (v === 0) return "-∞";
@@ -2093,8 +2095,18 @@ function AvantisWidget({ widget, editing, update }: WidgetProps) {
             {settings?.avantis_scene_labels?.[String(snap.scene)]
               ? ` — ${settings.avantis_scene_labels[String(snap.scene)]}`
               : ""}
+            {snap.sceneAt ? ` · ${fmtSince(snap.sceneAt, Date.now())}` : ""}
           </span>
         )}
+        {(() => {
+          const ws = wavesState(snap.scene, settings?.avantis_waves_on_scene ?? 0, settings?.avantis_waves_off_scene ?? 0);
+          if (ws === "unknown") return null;
+          return (
+            <span className={`chip ${ws === "on" ? "online" : "warn"}`} title="From the last scene recall the desk announced">
+              Waves {ws.toUpperCase()}
+            </span>
+          );
+        })()}
         {canControl && (
           <select
             className="input av-scene-pick"
@@ -2166,7 +2178,12 @@ function AvantisWidget({ widget, editing, update }: WidgetProps) {
                 const muted = snap.mutes[r.id];
                 const fader = snap.faders[r.id];
                 const col = AVANTIS_COLORS[snap.colors[r.id] ?? 0];
-                const cls = `av-chan ${muted === true ? "muted" : muted === false ? "live" : ""}`;
+                const conf = muteConfidence(snap, r.id);
+                const cls = `av-chan ${muted === true ? "muted" : muted === false ? "live" : ""} ${conf === "remembered" ? "remembered" : ""}`;
+                const rememberedTitle =
+                  conf === "remembered"
+                    ? ` — remembered${snap.muteSeen?.[r.id] ? ` from ${fmtSince(snap.muteSeen[r.id], Date.now())}` : ""}, not confirmed since the desk connected. Tap its mute on the desk to confirm.`
+                    : "";
                 // ±1 dB per press (the protocol maps 64 dB across 127 steps).
                 const nudge = (d: number) => {
                   const cur = snap.faders[r.id];
@@ -2178,11 +2195,11 @@ function AvantisWidget({ widget, editing, update }: WidgetProps) {
                     key={r.id}
                     className={cls}
                     style={col ? { borderLeftColor: col } : undefined}
-                    title={`${KIND_LABEL[r.kind] ?? r.kind} ${r.idx}`}
+                    title={`${KIND_LABEL[r.kind] ?? r.kind} ${r.idx}${rememberedTitle}`}
                   >
                     <span className="av-name">{r.name}</span>
                     <span className="av-sub">
-                      {muted === true ? "MUTED" : muted === false ? "live" : "—"}
+                      {muted === true ? (conf === "remembered" ? "MUTED?" : "MUTED") : muted === false ? (conf === "remembered" ? "live?" : "live") : "—"}
                       {fader !== undefined ? ` · ${faderDb(fader)}` : ""}
                     </span>
                     {canControl && (

@@ -9179,3 +9179,10 @@ select.input {
   cursor: pointer;
   padding: 0;
 }
+
+/* Desk widget: a mute ProDeck only remembers (not confirmed since the desk
+   connected) is a guess — draw it as one. */
+.av-chan.remembered {
+  border-style: dashed;
+  opacity: 0.78;
+}
