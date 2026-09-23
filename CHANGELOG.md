@@ -73,8 +73,8 @@ an instrumental.
 
 ### New — song keys on the Stream Deck
 
-\`GET /api/deck/key?text=G\` (C, C#/Db … B, or \`off\` for Tune off) sends a key
-through the booth, and \`deck-state\` now carries the sent and live key so a
+`GET /api/deck/key?text=G` (C, C#/Db … B, or `off` for Tune off) sends a key
+through the booth, and `deck-state` now carries the sent and live key so a
 Companion key can glow. At Cornerstone: Production's WAVES readout opens a
 new Keys page.
 
