@@ -209,6 +209,11 @@ mirrors them for GitHub readers.
   (64 channels, 49 sources, 3 doors, 10 buses, 15 outputs, 8 destinations,
   8 watchlist items) from a one-off script kept outside the repo at
   `~/.prodeck/cornerstone-routing.json`. Awaiting Zach's verification pass.
+- **Waves LV1 added 2026-09-23** from the `.emo` session (SQLite): dest
+  `waves-lv1`, insert-send outputs (channel → output edges, allowed by
+  `canConnect`), watchlist `w-waves-down`. Walking to a place now stops at
+  the feeding channels and reads destination-first. LV1 findings live in
+  `~/.prodeck/system/LV1.md` (never in the repo).
 - Outputs are in the model and the walk (Places) already; the outputs
   *table* and in-app watchlist/rules editing remain Phase 3.
 - One-tap verification from a phone needs a member-writable command
