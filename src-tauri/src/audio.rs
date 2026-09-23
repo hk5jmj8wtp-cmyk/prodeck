@@ -468,25 +468,72 @@ impl AudioInner {
 
 pub type AudioState = Arc<AudioInner>;
 
-#[tauri::command]
-pub fn list_audio_inputs() -> Result<Vec<String>, String> {
-    let host = cpal::default_host();
-    let mut names = Vec::new();
-    if let Ok(devices) = host.input_devices() {
-        for d in devices {
-            if let Ok(name) = d.name() {
-                names.push(name);
-            }
+/// Every CoreAudio device query in this process goes through here.
+///
+/// Why: on 2026-09-23 the booth came up frozen after a relaunch — window
+/// painted, gateway port listening but never accepting, PP/PCO never
+/// connected. `sample` showed the main thread parked in
+/// `list_audio_inputs → cpal input_devices → AudioComponentInstanceNew →
+/// mach_msg` waiting on coreaudiod, while the Settings page had *also* just
+/// kicked off `start_audio_capture`, whose `find_device` walks the same
+/// AudioUnit instantiation on another thread. AudioToolbox instantiates
+/// components on a serial queue and the second caller waits "Synchronously";
+/// with the main thread being one of the two callers, the process deadlocks.
+/// Every Tauri IPC reply then queues behind the dead main thread, the tokio
+/// workers block on those replies, and the web gateway's accept loop starves.
+///
+/// Fix, in three parts: (1) one mutex so device enumeration never runs
+/// concurrently with itself; (2) run it on a blocking thread, never on the
+/// main thread; (3) a hard timeout — if CoreAudio is wedged we return an
+/// error and leak the stuck thread instead of taking the app down with it.
+static COREAUDIO: Mutex<()> = Mutex::new(());
+const COREAUDIO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+
+async fn coreaudio<T: Send + 'static>(
+    what: &'static str,
+    f: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, String> {
+    let job = tokio::task::spawn_blocking(move || {
+        let _serial = COREAUDIO.lock().unwrap_or_else(|p| p.into_inner());
+        f()
+    });
+    match tokio::time::timeout(COREAUDIO_TIMEOUT, job).await {
+        Ok(Ok(v)) => Ok(v),
+        Ok(Err(e)) => Err(format!("{what}: audio worker panicked: {e}")),
+        Err(_) => {
+            eprintln!("[audio] {what}: CoreAudio did not answer within {COREAUDIO_TIMEOUT:?} — audio system stalled");
+            Err(format!("{what}: the audio system did not respond. Check Audio MIDI Setup, or restart the app."))
         }
     }
-    Ok(names)
 }
 
 #[tauri::command]
-pub fn default_audio_input() -> Option<String> {
-    cpal::default_host()
-        .default_input_device()
-        .and_then(|d| d.name().ok())
+pub async fn list_audio_inputs() -> Result<Vec<String>, String> {
+    coreaudio("list_audio_inputs", || {
+        let host = cpal::default_host();
+        let mut names = Vec::new();
+        if let Ok(devices) = host.input_devices() {
+            for d in devices {
+                if let Ok(name) = d.name() {
+                    names.push(name);
+                }
+            }
+        }
+        names
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn default_audio_input() -> Option<String> {
+    coreaudio("default_audio_input", || {
+        cpal::default_host()
+            .default_input_device()
+            .and_then(|d| d.name().ok())
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 fn find_device(name: &Option<String>) -> Option<cpal::Device> {
@@ -502,16 +549,23 @@ fn find_device(name: &Option<String>) -> Option<cpal::Device> {
 }
 
 #[tauri::command]
-pub fn start_audio_capture(
+pub async fn start_audio_capture(
     device: Option<String>,
     state: tauri::State<'_, AudioState>,
     settings: tauri::State<'_, SettingsState>,
     app: AppHandle,
 ) -> Result<(), String> {
-    let dev = find_device(&device).ok_or_else(|| "No matching input device".to_string())?;
-    let config = dev
-        .default_input_config()
-        .map_err(|e| format!("input config: {e}"))?;
+    // Device lookup + default config are the CoreAudio calls that can stall;
+    // see `coreaudio()`. Opening the stream itself happens on the capture
+    // thread below, which was never on the main thread.
+    let (dev, config) = coreaudio("start_audio_capture", move || {
+        let dev = find_device(&device).ok_or_else(|| "No matching input device".to_string())?;
+        let config = dev
+            .default_input_config()
+            .map_err(|e| format!("input config: {e}"))?;
+        Ok::<_, String>((dev, config))
+    })
+    .await??;
 
     // Stop any prior capture.
     state.running.store(false, Ordering::Release);
@@ -807,11 +861,15 @@ pub fn stop_audio_capture(state: tauri::State<'_, AudioState>) {
 /// Number of input channels the given device exposes — used by the channel
 /// routing UI (e.g. an 8-channel Dante input).
 #[tauri::command]
-pub fn audio_input_channels(device: Option<String>) -> u16 {
-    find_device(&device)
-        .and_then(|d| d.default_input_config().ok())
-        .map(|c| c.channels())
-        .unwrap_or(0)
+pub async fn audio_input_channels(device: Option<String>) -> u16 {
+    coreaudio("audio_input_channels", move || {
+        find_device(&device)
+            .and_then(|d| d.default_input_config().ok())
+            .map(|c| c.channels())
+            .unwrap_or(0)
+    })
+    .await
+    .unwrap_or(0)
 }
 
 /// Continuously analyze the rolling window and emit ~28 log-spaced band levels.

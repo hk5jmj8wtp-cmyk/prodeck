@@ -95,6 +95,17 @@ export function UpdaterProvider({ children }: { children: ReactNode }) {
       // leaving the freshly installed update not running at all. Seen on the
       // first real in-app update on this channel.
       await invoke<void>("release_single_instance").catch(() => {});
+      // Tauri's relaunch() exec()s the new binary as our child and exits 0.
+      // Under a launchd watchdog that child dies with our process group and
+      // the job is not restarted — the update installs and the app never
+      // comes back (seen 2026-09-23). relaunch_after_update knows the two safe
+      // paths (exit non-zero under launchd; `open -n` otherwise) and exits the
+      // process itself. If it is not applicable here, fall back to the stock path.
+      const handled = await invoke<string>("relaunch_after_update").then(() => true).catch(() => false);
+      if (handled) {
+        await new Promise((r) => setTimeout(r, 5000)); // the process exits underneath us
+        return;
+      }
       await relaunch();
     } catch (e) {
       setError(String(e));

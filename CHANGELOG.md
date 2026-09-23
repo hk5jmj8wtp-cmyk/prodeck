@@ -49,15 +49,35 @@ numbers below are the ones shown in **Settings → Software Update**.
 ### Fixed — after an update installed, ProDeck didn't come back
 
 The first in-app update that actually installed (0.9.92 → 0.9.94) ended with
-nothing running: the new copy started while the old one was still on its way
-out, saw a running ProDeck, politely stepped aside and quit — and the old one
-then quit too. Opening ProDeck by hand brought the new version up fine; it just
-shouldn't have needed you to.
+nothing running. The new version was in place and correct; opening ProDeck by
+hand brought it straight up. It just shouldn't have needed you to.
 
-The old copy now releases its "I'm running" lock before relaunching, so the new
-one starts as the only instance. Because this fix lives in the copy doing the
-updating, the first update *from* 0.9.94 will still need one manual open; every
-update after that comes back on its own.
+What happened: the old copy started the new one as its own child process and
+then quit. If ProDeck is being kept alive by a supervisor (the way a booth Mac
+runs it, so it comes back after a crash), the supervisor treats the parent
+quitting as the end of the job and stops the child with it — and because the
+parent quit cleanly, it didn't restart anything either.
+
+Relaunching now takes the right path for how ProDeck was started. Under a
+supervisor it asks to be restarted, and comes back still supervised. Started
+normally, it hands the launch to macOS the same way a double-click does, so the
+new copy stands on its own before the old one leaves. Because this fix lives in
+the copy doing the updating, the first update *from* 0.9.94 will still need one
+manual open; every update after that comes back on its own.
+
+### Fixed — ProDeck could freeze completely while opening Settings
+
+Rarely, ProDeck came up with its window drawn but nothing working: no
+ProPresenter, no Planning Center, phones unable to connect. It was waiting
+forever on macOS's audio system. Opening Settings both lists your audio inputs
+and starts the sound meter, and when those two asked CoreAudio the same
+question at the same moment — one of them from the app's main thread — the
+answers deadlocked and took the whole app with them.
+
+Audio device questions now go one at a time, never on the main thread, and give
+up after eight seconds with a clear error instead of hanging. A stalled audio
+system can still leave the meter empty; it can no longer take the rest of
+ProDeck down.
 
 ## 0.9.94 — 23 September 2026
 

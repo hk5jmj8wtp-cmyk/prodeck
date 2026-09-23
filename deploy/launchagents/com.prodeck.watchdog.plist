@@ -14,12 +14,21 @@
        and `launchctl list com.prodeck.watchdog` will show no PID. To put it
        back under the watchdog, quit ProDeck and kickstart as above. That is
        the deliberate trade: one unguarded copy beats two copies racing each
-       other over the same data files. -->
+       other over the same data files.
+
+       PRODECK_LAUNCHD tells the app it is running under this job. After an
+       in-app update it then exits non-zero on purpose so KeepAlive brings up
+       the new bundle here, still guarded — instead of exec'ing a child that
+       launchd would kill along with this job's process group.
+       AbandonProcessGroup is belt-and-braces for anything else it spawns. -->
   <key>Label</key><string>com.prodeck.watchdog</string>
   <key>ProgramArguments</key>
   <array><string>/Applications/ProDeck.app/Contents/MacOS/prodeck</string></array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
   <key>ThrottleInterval</key><integer>10</integer>
+  <key>AbandonProcessGroup</key><true/>
+  <key>EnvironmentVariables</key>
+  <dict><key>PRODECK_LAUNCHD</key><string>1</string></dict>
 </dict>
 </plist>

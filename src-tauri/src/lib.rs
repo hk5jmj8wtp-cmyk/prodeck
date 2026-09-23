@@ -123,6 +123,65 @@ fn migrate_legacy_data_dir() {
     }
 }
 
+/// Bring the freshly installed bundle up after an in-app update, then exit.
+///
+/// Tauri's stock restart() exec()s the new binary as a child of the old
+/// process and calls exit(0). That is fine for an app someone double-clicked.
+/// It is fatal for an app launchd is keeping alive: the child lands in the
+/// job's process group, and when the parent exits launchd tears the whole
+/// group down (no AbandonProcessGroup) and, seeing exit 0 with
+/// SuccessfulExit=false, does not restart it. Measured on the first update
+/// this channel ever installed (2026-09-23): perfect bundle swap, kernel
+/// logged the new binary's exec, launchd marked the job inactive 12ms later,
+/// nothing left running. The "adhoc signed" AMFI line in that log is
+/// informational — a plain exec of the same binary works.
+///
+/// So, two paths:
+///  * Under launchd (the watchdog plist sets PRODECK_LAUNCHD=1): exit
+///    non-zero. KeepAlive restarts the job, which starts the NEW bundle,
+///    still managed. No child, no process-group race.
+///  * Anywhere else on macOS: hand the launch to LaunchServices with
+///    `open -n`, exactly what a double-click does. The new copy is its own
+///    process group, then we exit 0.
+/// Other platforms return Err and the frontend falls back to Tauri's relaunch.
+/// Not exposed over the web gateway.
+#[tauri::command]
+fn relaunch_after_update() -> Result<String, String> {
+    use std::{thread, time::Duration};
+    if std::env::var_os("PRODECK_LAUNCHD").is_some() {
+        thread::spawn(|| {
+            thread::sleep(Duration::from_millis(300));
+            std::process::exit(3);
+        });
+        return Ok("launchd".into());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        // …/ProDeck.app/Contents/MacOS/prodeck → …/ProDeck.app
+        let bundle = exe
+            .parent().and_then(|p| p.parent()).and_then(|p| p.parent())
+            .filter(|p| p.extension().map(|x| x == "app").unwrap_or(false))
+            .ok_or_else(|| format!("not running from an .app bundle: {}", exe.display()))?
+            .to_path_buf();
+        std::process::Command::new("/usr/bin/open")
+            .arg("-n")
+            .arg(&bundle)
+            .spawn()
+            .map_err(|e| format!("open failed: {e}"))?;
+        thread::spawn(|| {
+            // Let LaunchServices start the new copy before this one goes away.
+            thread::sleep(Duration::from_millis(1500));
+            std::process::exit(0);
+        });
+        return Ok("open".into());
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("no special relaunch path on this platform".into())
+    }
+}
+
 /// Release the single-instance socket so a relaunch can take over.
 ///
 /// Only for the moment before `relaunch()` after an update. Calling it at any
@@ -314,6 +373,7 @@ pub fn run() {
             lan::open_local_network_settings,
             avantis::avantis_reconnect,
             release_single_instance,
+            relaunch_after_update,
             obs::obs_reconnect,
             // Audio
             audio::list_audio_inputs,
