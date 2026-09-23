@@ -71,6 +71,15 @@ Maps saved by the old Routing page are converted on first open with every
 step kept, and nothing is written until you press Save. Until you paste your
 own list, the page shows a clearly-labelled sixteen-channel example.
 
+### Fixed — the sound meter could stay off for a whole service
+
+If the audio interface was restarting at the moment ProDeck launched (Dante
+Virtual Soundcard does this), the meter's one start attempt hung inside
+macOS's audio system and nothing ever tried again — and every later audio
+question waited politely behind the hung one. Now a query that overruns is
+abandoned rather than waited on, the meter retries every 30 seconds until it
+is running, and the error text says what is going on.
+
 ### New — Routing → Map draws it
 
 The same map as boxes and lines, laid out by kind: sources, doors, channels,

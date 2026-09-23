@@ -353,6 +353,24 @@ export function ProDeckProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Keep trying. The one start above used to be the only attempt: when the
+  // audio interface was mid-restart at launch (Dante Virtual Soundcard does
+  // this), the meter stayed off until someone restarted ProDeck — a whole
+  // service without SPL. Retry every 30 s while nothing is running; once the
+  // stream is up this does nothing.
+  const audioRunningRef = useRef(false);
+  audioRunningRef.current = audioRunning;
+  useEffect(() => {
+    if (IS_WEB) return;
+    const iv = setInterval(() => {
+      if (audioRunningRef.current) return;
+      getSettings()
+        .then((s) => startAudioCapture(s.audio_input ?? null))
+        .catch(() => {});
+    }, 30_000);
+    return () => clearInterval(iv);
+  }, []);
+
   // Mirror reconnect targets from settings.
   useEffect(() => {
     autoRef.current = !!settings?.pp_auto_connect;

@@ -486,23 +486,69 @@ pub type AudioState = Arc<AudioInner>;
 /// concurrently with itself; (2) run it on a blocking thread, never on the
 /// main thread; (3) a hard timeout — if CoreAudio is wedged we return an
 /// error and leak the stuck thread instead of taking the app down with it.
-static COREAUDIO: Mutex<()> = Mutex::new(());
+/// One CoreAudio query in flight at a time — but a query that has overrun
+/// the timeout is treated as ABANDONED, not as holding the lock. On
+/// 2026-09-23 the Dante Virtual Soundcard restarted while ProDeck was
+/// enumerating devices; that one HAL call never returned, and with a plain
+/// mutex every later audio call (including the meter's own start) queued
+/// behind it forever. The wedged thread can't be cancelled, but nothing else
+/// has to wait for it.
+static IN_FLIGHT: Mutex<Option<(std::time::Instant, &'static str)>> = Mutex::new(None);
+/// When the audio system last failed to answer, for the error text.
+static STALLED_SINCE: Mutex<Option<std::time::Instant>> = Mutex::new(None);
 const COREAUDIO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+
+fn claim(what: &'static str) -> Result<std::time::Instant, &'static str> {
+    let mut g = IN_FLIGHT.lock().unwrap_or_else(|p| p.into_inner());
+    match *g {
+        Some((started, prev)) if started.elapsed() < COREAUDIO_TIMEOUT => Err(prev),
+        _ => {
+            let now = std::time::Instant::now();
+            *g = Some((now, what));
+            Ok(now)
+        }
+    }
+}
+
+fn release(mine: std::time::Instant) {
+    let mut g = IN_FLIGHT.lock().unwrap_or_else(|p| p.into_inner());
+    if matches!(*g, Some((started, _)) if started == mine) {
+        *g = None;
+    }
+}
 
 async fn coreaudio<T: Send + 'static>(
     what: &'static str,
     f: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, String> {
     let job = tokio::task::spawn_blocking(move || {
-        let _serial = COREAUDIO.lock().unwrap_or_else(|p| p.into_inner());
-        f()
+        // Wait our turn for up to the timeout, then run. A previous query that
+        // is past the timeout is abandoned and we go ahead beside it.
+        let deadline = std::time::Instant::now() + COREAUDIO_TIMEOUT;
+        let mine = loop {
+            match claim(what) {
+                Ok(t) => break t,
+                Err(_) if std::time::Instant::now() < deadline => std::thread::sleep(std::time::Duration::from_millis(50)),
+                Err(prev) => return Err(format!("{what}: still waiting on {prev}")),
+            }
+        };
+        let out = f();
+        release(mine);
+        *STALLED_SINCE.lock().unwrap_or_else(|p| p.into_inner()) = None;
+        Ok(out)
     });
     match tokio::time::timeout(COREAUDIO_TIMEOUT, job).await {
-        Ok(Ok(v)) => Ok(v),
+        Ok(Ok(Ok(v))) => Ok(v),
+        Ok(Ok(Err(e))) => Err(e),
         Ok(Err(e)) => Err(format!("{what}: audio worker panicked: {e}")),
         Err(_) => {
-            eprintln!("[audio] {what}: CoreAudio did not answer within {COREAUDIO_TIMEOUT:?} — audio system stalled");
-            Err(format!("{what}: the audio system did not respond. Check Audio MIDI Setup, or restart the app."))
+            let mut st = STALLED_SINCE.lock().unwrap_or_else(|p| p.into_inner());
+            let since = st.get_or_insert_with(std::time::Instant::now).elapsed().as_secs();
+            eprintln!("[audio] {what}: CoreAudio did not answer within {COREAUDIO_TIMEOUT:?} (stalled {since}s) — abandoning that call");
+            Err(format!(
+                "{what}: the audio system did not respond for {}s. ProDeck will keep trying; if it stays off, check the audio interface (Dante Virtual Soundcard) and Audio MIDI Setup.",
+                COREAUDIO_TIMEOUT.as_secs()
+            ))
         }
     }
 }
