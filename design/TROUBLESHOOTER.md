@@ -94,6 +94,16 @@ lists them; the folder opens in Finder). Shipped example: one short
 Settings → **Troubleshooter**: API key (secret), model, "Let crew phones ask"
 (default on once a key exists), monthly call cap (default 500), and the log.
 
+## Status
+
+- **Phase 1 shipped to the booth 2026-09-23** (`23c42d9`…`0bf041e`). Real
+  answers verified against the API: a wireless crackle → pack/receiver/battery
+  steps with the desk ticks first; "nothing from the keys" → one clarifying
+  question (stage keys vs playback keys); a silent stream → lobby test first,
+  LV1, ATEM, scene 19. 5–12 s per answer, 1–4 tool calls on claude-sonnet-5.
+- Account-level Anthropic keys need `assist_workspace_id`; the app says so.
+- Cornerstone knowledge = the dossier copied into `<data>/knowledge/`.
+
 ## Phases
 
 1. Rust proxy + secret setting + knowledge loader + log. TS agent loop with
