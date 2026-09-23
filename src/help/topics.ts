@@ -763,6 +763,7 @@ You can see and steer this in three places:
 - The **ProPresenter** page shows a strip under the transport: the key last sent (green when it matches the live song, amber when the rig is on something else), the live song's key, the MIDI link, and thirteen buttons.
 - The **Song Key → Waves** dashboard tile is the same strip, for the booth or a phone.
 - Any phone with **Control** can press a key too; the booth does the sending.
+- On the **Stream Deck**, Production's **WAVES** key shows the key last sent (amber when the rig and the song disagree); press it for the **Keys** page — twelve keys and **Tune off**. The key the rig is on glows green, the live song's key glows amber. Companion calls \`/api/deck/key?text=G\` (or \`text=off\`).
 
 Press a key to send it now — a re-send of the same key is fine. **Tune off** when a speaker or a spoken piece shouldn't be tuned. **The rig reconnects itself.** When the output is a Network MIDI session, ProDeck watches it and remembers who was connected (the Waves PC). After either computer restarts, ProDeck asks that peer to connect again every 20 seconds until it answers — nobody has to open Audio MIDI Setup. The strip's second chip shows it: **→ Axis_One** when connected, **waiting for …** while it keeps asking. It learns the peer the first time it sees it connected, so connect once by hand on a new setup.
 

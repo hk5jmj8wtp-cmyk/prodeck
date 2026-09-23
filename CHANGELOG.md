@@ -71,6 +71,13 @@ an instrumental.
 - Settings → Audio → **Auto-Follow listens to** picks its channels (default:
   the Listen board mix). ProDeck finds the best Whisper model by itself.
 
+### New — song keys on the Stream Deck
+
+\`GET /api/deck/key?text=G\` (C, C#/Db … B, or \`off\` for Tune off) sends a key
+through the booth, and \`deck-state\` now carries the sent and live key so a
+Companion key can glow. At Cornerstone: Production's WAVES readout opens a
+new Keys page.
+
 ### New — the Waves key link reconnects itself after a restart
 
 Song Key → Waves rides a Network MIDI session to the Waves PC, and macOS
