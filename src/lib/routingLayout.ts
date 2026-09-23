@@ -25,10 +25,11 @@ import {
 
 export const COLUMNS: NodeKind[] = ["source", "door", "channel", "bus", "output", "destination"];
 
-export const NODE_W = 168;
-export const NODE_H = 40;
-const COL_GAP = 90;
-const ROW_GAP = 10;
+export const NODE_W = 150;
+export const NODE_H = 36;
+const COL_GAP = 64;
+const ROW_GAP = 8;
+const MARGIN = 20;
 
 export type GraphFilter = "all" | Transport;
 
@@ -48,12 +49,19 @@ export interface GNode {
   id: string;
   kind: NodeKind;
   label: string;
-  sub?: string;
   x: number;
   y: number;
-  paint: Paint;
   /** Position came from a manual nudge, not the layout. */
   pinned: boolean;
+  dead?: boolean;
+}
+
+/** What live state adds to a node: computed per tick, compared by `key`, and
+ *  only nodes whose key changed are re-rendered. */
+export interface NodePaint {
+  paint: Paint;
+  sub?: string;
+  key: string;
 }
 
 export interface GEdge {
@@ -64,8 +72,6 @@ export interface GEdge {
   transport?: Transport;
   dead?: boolean;
   unverified: boolean;
-  /** Live signal is flowing here as far as ProDeck can see. */
-  live?: boolean;
   /** Which end the socket label sits near: the end that is NOT the hub. A
    *  door has dozens of edges into one port; labels at its end pile up. */
   labelAt: "source" | "target";
@@ -74,6 +80,9 @@ export interface GEdge {
 export interface Graph {
   nodes: GNode[];
   edges: GEdge[];
+  /** Extent of the laid-out graph, for fit-to-width. */
+  width: number;
+  height: number;
 }
 
 /** The transports a door carries; a node's transport is its door's. */
@@ -156,15 +165,13 @@ export function subFor(n: RNode, paint: Paint): string | undefined {
 }
 
 /**
- * Lay the (filtered) map out in columns. Nodes with a saved `pos` keep it;
- * dagre orders the rest within their column to reduce crossings.
+ * Lay the (filtered) map out in columns. Geometry only — no live state, so
+ * this is recomputed when the map or filter changes and never on a tick.
+ * Nodes with a saved `pos` keep it; dagre orders the rest within their
+ * column to reduce crossings.
  */
-export function layoutGraph(map: RoutingMap, filter: GraphFilter, live: LiveView): Graph {
+export function layoutGraph(map: RoutingMap, filter: GraphFilter): Graph {
   const { nodes, edges } = filterMap(map, filter);
-  // dagre decides the ORDER within each column (fewest crossings). Columns
-  // themselves are fixed: x is a straight function of kind, so a lone source
-  // with no edges still sits with the other sources, not wherever dagre's
-  // ranker would have put it.
   const g = new dagre.graphlib.Graph();
   g.setGraph({ rankdir: "LR", nodesep: ROW_GAP, ranksep: COL_GAP, ranker: "longest-path" });
   g.setDefaultEdgeLabel(() => ({}));
@@ -172,11 +179,12 @@ export function layoutGraph(map: RoutingMap, filter: GraphFilter, live: LiveView
   for (const e of edges) if (g.hasNode(e.from) && g.hasNode(e.to)) g.setEdge(e.from, e.to);
   dagre.layout(g);
 
-  const colX = (k: NodeKind) => 20 + COLUMNS.indexOf(k) * (NODE_W + COL_GAP);
+  const colX = (k: NodeKind) => MARGIN + COLUMNS.indexOf(k) * (NODE_W + COL_GAP);
 
   const byCol = new Map<NodeKind, RNode[]>();
   for (const n of nodes) byCol.set(n.kind, [...(byCol.get(n.kind) ?? []), n]);
   const out: GNode[] = [];
+  let maxY = MARGIN;
   for (const [kind, list] of byCol) {
     const sorted = [...list].sort((a, b) => {
       const ya = g.node(a.id)?.y ?? 0;
@@ -184,27 +192,25 @@ export function layoutGraph(map: RoutingMap, filter: GraphFilter, live: LiveView
       if (Math.abs(ya - yb) > 0.5) return ya - yb;
       return firstIndex(a.ref?.index) - firstIndex(b.ref?.index);
     });
-    let y = 20;
+    let y = MARGIN;
     for (const n of sorted) {
-      const paint = paintFor(n, live);
       const pinned = !!n.pos;
       out.push({
         id: n.id,
         kind,
         label: n.label || (n.kind === "channel" ? `Channel ${n.ref?.index ?? ""}` : n.id),
-        sub: subFor(n, paint),
         x: pinned ? n.pos!.x : colX(kind),
         y: pinned ? n.pos!.y : y,
-        paint,
         pinned,
+        dead: n.dead,
       });
+      maxY = Math.max(maxY, (pinned ? n.pos!.y : y) + NODE_H);
       y += NODE_H + ROW_GAP;
     }
   }
 
   const gEdges: GEdge[] = edges.map((e) => {
     const to = node(map, e.to);
-    const toPaint = to ? paintFor(to, live) : undefined;
     return {
       id: e.id,
       from: e.from,
@@ -213,11 +219,32 @@ export function layoutGraph(map: RoutingMap, filter: GraphFilter, live: LiveView
       transport: e.transport,
       dead: e.dead || node(map, e.from)?.dead || to?.dead,
       unverified: typeof e.verified !== "number",
-      live: toPaint?.signal === true,
       labelAt: to?.kind === "door" || to?.kind === "bus" ? "source" : "target",
     };
   });
-  return { nodes: out, edges: gEdges };
+  // Extent of what is actually drawn, not of all six columns: a map with no
+  // buses or outputs yet fits its three columns to the window instead of
+  // leaving half the canvas empty.
+  const maxX = out.reduce((m, n) => Math.max(m, n.x + NODE_W), MARGIN);
+  return { nodes: out, edges: gEdges, width: maxX + MARGIN, height: maxY + MARGIN };
+}
+
+/** Live state for every node on the graph, plus which edges carry signal.
+ *  Cheap to call every tick; the component compares `key`s and re-renders
+ *  only what changed. */
+export function paintGraph(map: RoutingMap, graph: Graph, live: LiveView): { nodes: Map<string, NodePaint>; liveEdges: Set<string> } {
+  const nodes = new Map<string, NodePaint>();
+  const signal = new Set<string>();
+  for (const g of graph.nodes) {
+    const n = node(map, g.id);
+    if (!n) continue;
+    const paint = paintFor(n, live);
+    const sub = subFor(n, paint);
+    if (paint.signal) signal.add(g.id);
+    nodes.set(g.id, { paint, sub, key: `${paint.muted ? "m" : ""}${paint.faderDb ?? ""}|${paint.deskName ?? ""}|${paint.signal ? "s" : ""}|${paint.dead ? "d" : ""}|${paint.unverified ? "u" : ""}|${sub ?? ""}` });
+  }
+  const liveEdges = new Set(graph.edges.filter((e) => signal.has(e.to)).map((e) => e.id));
+  return { nodes, liveEdges };
 }
 
 /** Kinds constrain what can connect to what: a source can't wire straight
@@ -234,7 +261,7 @@ export function canConnect(from: NodeKind, to: NodeKind): boolean {
 /** Where a brand-new node of a kind lands: its column, below the others. */
 export function newNodePos(graph: Graph, kind: NodeKind): { x: number; y: number } {
   const col = graph.nodes.filter((n) => n.kind === kind);
-  const x = col[0]?.x ?? 20 + COLUMNS.indexOf(kind) * (NODE_W + COL_GAP);
-  const y = col.length ? Math.max(...col.map((n) => n.y)) + NODE_H + ROW_GAP : 20;
+  const x = col[0]?.x ?? MARGIN + COLUMNS.indexOf(kind) * (NODE_W + COL_GAP);
+  const y = col.length ? Math.max(...col.map((n) => n.y)) + NODE_H + ROW_GAP : MARGIN;
   return { x, y };
 }

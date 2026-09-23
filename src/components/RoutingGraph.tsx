@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   BaseEdge,
@@ -15,6 +15,7 @@ import {
   useNodesInitialized,
   useNodesState,
   useReactFlow,
+  useStore,
   type Connection,
   type Edge,
   type EdgeProps,
@@ -24,7 +25,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { askText } from "../lib/dialogs";
 import type { LiveView, NodeKind, RoutingMap, Transport } from "../lib/routing";
-import { canConnect, COLUMNS, layoutGraph, newNodePos, NODE_H, NODE_W, type GNode, type GraphFilter } from "../lib/routingLayout";
+import { canConnect, COLUMNS, layoutGraph, newNodePos, NODE_H, NODE_W, paintGraph, type GNode, type GraphFilter, type NodePaint } from "../lib/routingLayout";
 
 // The map as boxes and lines — the Routing Bible's diagrams, live. Loaded
 // lazily by the Routing page so phones and the web viewer never fetch React
@@ -71,11 +72,11 @@ const KIND_LABEL: Record<NodeKind, string> = {
   destination: "Destination",
 };
 
-type NData = { g: GNode };
+type NData = { g: GNode; paint: NodePaint["paint"]; sub?: string; key: string };
 
 const KindNode = memo(function KindNode({ data, selected }: NodeProps<Node<NData>>) {
   const { g } = data;
-  const p = g.paint;
+  const p = data.paint;
   const cls = [
     "rg-node",
     `k-${g.kind}`,
@@ -92,7 +93,7 @@ const KindNode = memo(function KindNode({ data, selected }: NodeProps<Node<NData
     <div className={cls} style={{ width: NODE_W, minHeight: NODE_H }} title={g.pinned ? "Nudged by hand — drag to move, or it stays here" : undefined}>
       {g.kind !== "source" && <Handle type="target" position={Position.Left} className="rg-port" />}
       <div className="rg-node-label">{g.label}</div>
-      {g.sub && <div className="rg-node-sub mono">{g.sub}</div>}
+      {data.sub && <div className="rg-node-sub mono">{data.sub}</div>}
       {p.signal && <span className="rg-dot" title="Signal reaching the booth" />}
       {g.kind !== "destination" && <Handle type="source" position={Position.Right} className="rg-port" />}
     </div>
@@ -129,26 +130,36 @@ const edgeTypes = { socket: SocketEdge };
 function Inner(props: RoutingGraphProps) {
   const { map, live, editing, filter, onFilter } = props;
   const rf = useReactFlow();
-  const graph = useMemo(() => layoutGraph(map, filter, live), [map, filter, live]);
+  // Geometry changes with the map or the filter. Live state changes every
+  // second. They are kept apart so a tick can never rebuild the graph — that
+  // was the flicker: every repaint re-seeded all nodes and edges.
+  const graph = useMemo(() => layoutGraph(map, filter), [map, filter]);
+  const paints = useMemo(() => paintGraph(map, graph, live), [map, graph, live]);
+  const paintsRef = useRef(paints);
+  paintsRef.current = paints;
 
   // React Flow measures nodes and handles itself and reports them back as
   // changes; in a fully controlled flow those measurements are lost and no
-  // edge ever draws. So the flow owns its node/edge arrays and we re-seed
-  // them whenever the layout changes.
+  // edge ever draws. So the flow owns its node/edge arrays; we seed them when
+  // the layout changes and patch only the changed ones when paint changes.
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<NData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge<EData>>([]);
   useEffect(() => {
+    const p = paintsRef.current;
     setNodes((prev) => {
       const sel = new Set(prev.filter((n) => n.selected).map((n) => n.id));
-      return graph.nodes.map((g) => ({
-        id: g.id,
-        type: "kind",
-        position: { x: g.x, y: g.y },
-        data: { g },
-        draggable: editing,
-        connectable: editing,
-        selected: sel.has(g.id),
-      }));
+      return graph.nodes.map((g) => {
+        const np = p.nodes.get(g.id);
+        return {
+          id: g.id,
+          type: "kind",
+          position: { x: g.x, y: g.y },
+          data: { g, paint: np?.paint ?? { unverified: true }, sub: np?.sub, key: np?.key ?? "" },
+          draggable: editing,
+          connectable: editing,
+          selected: sel.has(g.id),
+        };
+      });
     });
     setEdges(
       graph.edges.map((e) => ({
@@ -156,27 +167,60 @@ function Inner(props: RoutingGraphProps) {
         source: e.from,
         target: e.to,
         type: "socket",
-        data: { label: e.label, transport: e.transport, dead: e.dead, unverified: e.unverified, live: e.live, labelAt: e.labelAt },
-        markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
+        data: { label: e.label, transport: e.transport, dead: e.dead, unverified: e.unverified, live: p.liveEdges.has(e.id), labelAt: e.labelAt },
+        markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12 },
         selectable: editing,
         deletable: editing,
-        animated: e.live,
+        animated: p.liveEdges.has(e.id),
       })),
     );
   }, [graph, editing, setNodes, setEdges]);
 
-  // Fit once per filter change (and on first paint), not on every live
-  // repaint — a nudge or a mute must not yank the view around. React Flow
-  // measures nodes a frame after they mount; `useNodesInitialized` flips
-  // when every node has a size, and only then does a fit mean anything.
+  // Paint tick: touch only nodes whose key changed and edges whose live flag
+  // flipped. Untouched objects keep their identity, so React Flow's memoised
+  // node components don't re-render at all.
+  useEffect(() => {
+    setNodes((prev) => {
+      let changed = false;
+      const next = prev.map((n) => {
+        const np = paints.nodes.get(n.id);
+        if (!np || np.key === n.data.key) return n;
+        changed = true;
+        return { ...n, data: { ...n.data, paint: np.paint, sub: np.sub, key: np.key } };
+      });
+      return changed ? next : prev;
+    });
+    setEdges((prev) => {
+      let changed = false;
+      const next = prev.map((e) => {
+        const live = paints.liveEdges.has(e.id);
+        if (!!e.data?.live === live) return e;
+        changed = true;
+        return { ...e, data: { ...e.data, live }, animated: live };
+      });
+      return changed ? next : prev;
+    });
+  }, [paints, setNodes, setEdges]);
+
+  // Fit to WIDTH, once per filter change (and on first paint). A sixty-four
+  // channel column is taller than any screen; fitting everything made the
+  // text unreadable. Fit the six columns across, anchor at the top, and let
+  // the wheel scroll down the sheet — a nudge or a mute never moves the view.
   const ready = useNodesInitialized();
+  const canvasW = useStore((s) => s.width);
   const fitKey = `${filter}:${graph.nodes.length}`;
   const [fitted, setFitted] = useState("");
+  const fitWidth = useCallback(() => {
+    if (!canvasW) return;
+    const zoom = Math.min(1.15, Math.max(0.45, (canvasW - 24) / graph.width));
+    const x = Math.max(0, (canvasW - graph.width * zoom) / 2);
+    rf.setViewport({ x, y: 8, zoom }, { duration: 200 });
+  }, [canvasW, graph.width, rf]);
   useEffect(() => {
     if (!ready || fitted === fitKey) return;
     setFitted(fitKey);
-    rf.fitView({ padding: 0.1, duration: 250, maxZoom: 1.1 });
-  }, [ready, fitKey, fitted, rf]);
+    fitWidth();
+  }, [ready, fitKey, fitted, fitWidth]);
 
   const kindOf = useCallback((id: string) => map.nodes.find((n) => n.id === id)?.kind, [map]);
 
@@ -237,7 +281,10 @@ function Inner(props: RoutingGraphProps) {
             ))}
           </div>
         )}
-        <span className="rg-hint">{editing ? "Drag to nudge · drag port to port to connect · Delete removes · double-click walks" : "Double-click a box to walk it · Edit to change the map"}</span>
+        <button className="rg-fit" onClick={fitWidth} title="Fit the columns to the window">
+          Fit
+        </button>
+        <span className="rg-hint">{editing ? "Drag to nudge · port to port connects · Delete removes · double-click walks · scroll to move, ⌘-scroll to zoom" : "Scroll to move down the sheet · ⌘-scroll or pinch to zoom · double-click a box to walk it"}</span>
       </div>
     <ReactFlow
       nodes={nodes}
@@ -247,9 +294,12 @@ function Inner(props: RoutingGraphProps) {
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
       colorMode={theme}
-      fitView
-      minZoom={0.15}
+      minZoom={0.25}
       maxZoom={2}
+      panOnScroll
+      zoomOnScroll={false}
+      zoomOnPinch
+      zoomActivationKeyCode={["Meta", "Control"]}
       nodesDraggable={editing}
       nodesConnectable={editing}
       elementsSelectable

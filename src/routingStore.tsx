@@ -85,24 +85,38 @@ export function useRouting(): RoutingCtx {
 export function useRoutingLive(): LiveView {
   const { subsystems } = useAlerts();
   const [desk, setDesk] = useState<AvantisSnapshot | null>(null);
+  const pendingDesk = useRef<AvantisSnapshot | null>(null);
   const capture = useRef<{ peaks: number[]; at: number } | null>(null);
-  const [, tick] = useState(0);
+  const [tickN, tick] = useState(0);
 
   useEffect(() => {
     let alive = true;
     avantisState()
       .then((s) => alive && setDesk(s))
       .catch(() => {});
-    const unState = on<AvantisSnapshot>("avantis:state", (s) => alive && setDesk(s));
+    // The mirror can emit several times a second during a fader ride. Hold
+    // the latest and publish it on the tick below, so the map repaints at a
+    // human rate, not a MIDI rate.
+    const unState = on<AvantisSnapshot>("avantis:state", (s) => {
+      pendingDesk.current = s;
+    });
     const unStatus = on<{ connected: boolean }>("avantis:status", (s) => {
       if (alive && !s.connected) setDesk((d) => (d ? { ...d, connected: false } : d));
     });
     const unChans = on<number[]>("audio:channels", (peaks) => {
       capture.current = { peaks, at: Date.now() };
     });
-    // Peaks arrive many times a second; the walk only needs to re-render
-    // often enough for a ✓ to appear when a pack is switched on.
-    const iv = setInterval(() => tick((n) => n + 1), 1500);
+    // One repaint a second is plenty for a ✓ to appear when a pack is
+    // switched on. Consumers compare what changed and skip the rest.
+    const iv = setInterval(() => {
+      if (!alive) return;
+      if (pendingDesk.current) {
+        const next = pendingDesk.current;
+        pendingDesk.current = null;
+        setDesk((d) => (d && JSON.stringify(d) === JSON.stringify(next) ? d : next));
+      }
+      tick((n) => n + 1);
+    }, 1000);
     return () => {
       alive = false;
       clearInterval(iv);
@@ -115,16 +129,18 @@ export function useRoutingLive(): LiveView {
   const subs = useMemo(() => Object.fromEntries(subsystems.map((s) => [s.key, s.state])), [subsystems]);
 
   // The mirror reports faders as MIDI 0–127; the walk thinks in dB.
-  const faders = useMemo(() => {
-    const out: Record<string, number> = {};
-    for (const [k, v] of Object.entries(desk?.faders ?? {})) out[k] = v === 0 ? -Infinity : (v / 127) * 64 - 54;
-    return out;
+  const deskView = useMemo(() => {
+    if (!desk) return null;
+    const faders: Record<string, number> = {};
+    for (const [k, v] of Object.entries(desk.faders ?? {})) faders[k] = v === 0 ? -Infinity : (v / 127) * 64 - 54;
+    return { connected: desk.connected, mutes: desk.mutes ?? {}, faders, names: desk.names ?? {} };
   }, [desk]);
 
-  return {
-    desk: desk ? { connected: desk.connected, mutes: desk.mutes ?? {}, faders, names: desk.names ?? {} } : null,
-    capture: capture.current,
-    subsystems: subs,
-    now: Date.now(),
-  };
+  // A new object only when something it holds has actually changed (or the
+  // clock ticked). Memoised consumers can then key off identity.
+  return useMemo(
+    () => ({ desk: deskView, capture: capture.current, subsystems: subs, now: Date.now() }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [deskView, subs, tickN],
+  );
 }

@@ -8611,14 +8611,14 @@ select.input {
 .rg-node {
   position: relative;
   box-sizing: border-box;
-  padding: 6px 10px 6px 12px;
-  border-radius: 8px;
+  padding: 4px 10px 4px 11px;
+  border-radius: 7px;
   border: 1px solid var(--border);
   border-left-width: 3px;
   background: var(--surface);
   color: var(--text);
-  font-size: 12px;
-  line-height: 1.25;
+  font-size: 12.5px;
+  line-height: 1.2;
 }
 .rg-node.selected {
   box-shadow: 0 0 0 2px var(--accent-line);
@@ -8630,7 +8630,7 @@ select.input {
   text-overflow: ellipsis;
 }
 .rg-node-sub {
-  font-size: 10px;
+  font-size: 10.5px;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -8777,6 +8777,20 @@ select.input {
 .rg-filters button.on {
   background: var(--accent);
   color: var(--accent-ink);
+}
+.rg-fit {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.rg-fit:hover {
+  color: var(--text);
 }
 .rg-add button:hover {
   background: var(--accent-soft);

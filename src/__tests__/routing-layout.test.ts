@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { applyRow, chId, doorId, emptyMap, exampleMap, parsePatchList, type LiveView } from "../lib/routing";
-import { canConnect, COLUMNS, filterMap, layoutGraph, newNodePos, paintFor, subFor } from "../lib/routingLayout";
+import { canConnect, COLUMNS, filterMap, layoutGraph, newNodePos, paintFor, paintGraph, subFor } from "../lib/routingLayout";
 
 const NOW = Date.parse("September 27, 2026 08:40:00");
-const blind: LiveView = { now: NOW };
 
 function boothMap() {
   const map = emptyMap();
@@ -17,7 +16,7 @@ function boothMap() {
 
 describe("layout by kind", () => {
   it("puts every node in its column, columns left to right", () => {
-    const g = layoutGraph(exampleMap(), "all", blind);
+    const g = layoutGraph(exampleMap(), "all");
     const xs = new Map<string, Set<number>>();
     for (const n of g.nodes) xs.set(n.kind, (xs.get(n.kind) ?? new Set()).add(Math.round(n.x)));
     // One x per kind.
@@ -27,14 +26,15 @@ describe("layout by kind", () => {
     expect(colX("door")).toBeLessThan(colX("channel"));
   });
   it("never overlaps two nodes in a column", () => {
-    const g = layoutGraph(exampleMap(), "all", blind);
+    const g = layoutGraph(exampleMap(), "all");
     const chans = g.nodes.filter((n) => n.kind === "channel").sort((a, b) => a.y - b.y);
-    for (let i = 1; i < chans.length; i++) expect(chans[i].y - chans[i - 1].y).toBeGreaterThanOrEqual(40);
+    for (let i = 1; i < chans.length; i++) expect(chans[i].y - chans[i - 1].y).toBeGreaterThanOrEqual(36);
+    expect(g.height).toBeGreaterThan(chans[chans.length - 1].y);
   });
   it("honours a manual nudge for that node only", () => {
     const map = exampleMap();
     map.nodes.find((n) => n.id === chId("1"))!.pos = { x: 999, y: 777 };
-    const g = layoutGraph(map, "all", blind);
+    const g = layoutGraph(map, "all");
     const moved = g.nodes.find((n) => n.id === chId("1"))!;
     expect(moved).toMatchObject({ x: 999, y: 777, pinned: true });
     const other = g.nodes.find((n) => n.id === chId("2"))!;
@@ -44,7 +44,7 @@ describe("layout by kind", () => {
   it("edges carry the socket as their label and inherit dead/unverified", () => {
     const map = boothMap();
     map.nodes.find((n) => n.id === "src:stage:1")!.dead = true;
-    const g = layoutGraph(map, "all", blind);
+    const g = layoutGraph(map, "all");
     const e = g.edges.find((x) => x.from === "src:stage:1")!;
     expect(e).toMatchObject({ label: "1", dead: true, unverified: true });
   });
@@ -84,8 +84,13 @@ describe("paint", () => {
     n.bind = { capture: 2 };
     expect(paintFor(n, { now: NOW, capture: { peaks: [0, 0.3], at: NOW - 500 } }).signal).toBe(true);
     expect(paintFor(n, { now: NOW, capture: { peaks: [0, 0.3], at: NOW - 9000 } }).signal).toBeUndefined();
-    const g = layoutGraph(map, "all", { now: NOW, capture: { peaks: [0, 0.3], at: NOW - 500 } });
-    expect(g.edges.find((e) => e.to === chId("39"))!.live).toBe(true);
+    const g = layoutGraph(map, "all");
+    const p = paintGraph(map, g, { now: NOW, capture: { peaks: [0, 0.3], at: NOW - 500 } });
+    expect(p.liveEdges.has(g.edges.find((e) => e.to === chId("39"))!.id)).toBe(true);
+    expect(p.nodes.get(chId("39"))!.paint.signal).toBe(true);
+    // Same live state → same keys, so nothing re-renders on an idle tick.
+    const again = paintGraph(map, g, { now: NOW + 1500, capture: { peaks: [0, 0.3], at: NOW - 500 } });
+    expect(again.nodes.get(chId("39"))!.key).toBe(p.nodes.get(chId("39"))!.key);
   });
 });
 
@@ -100,7 +105,7 @@ describe("connecting", () => {
     expect(canConnect("door", "door")).toBe(false);
   });
   it("a new node lands at the bottom of its column", () => {
-    const g = layoutGraph(exampleMap(), "all", blind);
+    const g = layoutGraph(exampleMap(), "all");
     const p = newNodePos(g, "channel");
     const col = g.nodes.filter((n) => n.kind === "channel");
     expect(p.x).toBe(col[0].x);
