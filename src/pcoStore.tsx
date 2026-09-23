@@ -69,6 +69,11 @@ export interface PlanItem {
   songId?: string;
   arrangementId?: string;
   keyId?: string; // the PCO Key record (per-key chord charts hang off it)
+  /** From the item's arrangement: tempo, length in seconds, section order.
+   *  Auto-Follow's clock uses these (MultiTracks play at a fixed tempo). */
+  bpm?: number;
+  arrangementLength?: number;
+  sections?: string[];
   pcoKey?: string; // original PCO key before any override
   pcoLeader?: string; // original PCO leader before any override
   keyOverridden?: boolean;
@@ -130,8 +135,19 @@ function parseItems(j: Json | null): PlanItem[] {
   const leaderNotes: Record<string, string> = {};
   // Attachment id -> filename (chord charts, lead sheets — the worship pull).
   const attachNames: Record<string, string> = {};
+  const arrangements: Record<string, { bpm?: number; length?: number; sequence?: string[] }> = {};
   if (Array.isArray(j?.included)) {
     for (const inc of j.included as any[]) {
+      if (inc.type === "Arrangement") {
+        const at = inc.attributes ?? {};
+        const bpm = Number(at.bpm);
+        const len = Number(at.length);
+        arrangements[String(inc.id)] = {
+          bpm: bpm > 0 ? bpm : undefined,
+          length: len > 0 ? len : undefined,
+          sequence: Array.isArray(at.sequence) && at.sequence.length ? at.sequence.map(String) : undefined,
+        };
+      }
       if (
         inc.type === "ItemNote" &&
         String(inc.attributes?.category_name ?? "").toLowerCase() === "leader"
@@ -189,6 +205,10 @@ function parseItems(j: Json | null): PlanItem[] {
         keyId: d.relationships?.key?.data?.id
           ? String(d.relationships.key.data.id)
           : undefined,
+        ...(() => {
+          const arr = arrangements[String(d.relationships?.arrangement?.data?.id ?? "")];
+          return arr ? { bpm: arr.bpm, arrangementLength: arr.length, sections: arr.sequence } : {};
+        })(),
       };
     })
     .sort((x, y) => x.sequence - y.sequence);

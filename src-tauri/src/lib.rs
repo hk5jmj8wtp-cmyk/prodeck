@@ -12,6 +12,7 @@ mod edge;
 mod identity;
 mod ga4;
 mod gemini;
+mod follow;
 mod assist;
 mod midi;
 mod netmidi;
@@ -389,6 +390,11 @@ pub fn run() {
             transcription::transcription_status,
             transcription::inject_caption,
             transcription::start_transcription,
+            transcription::transcription_set_prompt,
+            follow::follow_complete,
+            follow::follow_status,
+            follow::follow_timing_load,
+            follow::follow_timing_save,
             transcription::stop_transcription,
             // Gemini smart matching
             gemini::gemini_pick_slide,

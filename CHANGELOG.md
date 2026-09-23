@@ -46,6 +46,31 @@ numbers below are the ones shown in **Settings → Software Update**.
 
 ## Unreleased
 
+### New — Auto-Follow, rebuilt: the slide changes as the line ends
+
+Follow now hears the singing on four-second slices every two seconds, with
+Whisper large-v3-turbo kept loaded in the background (about one second a
+slice on an M1). It finds the song in the armed playlist by itself, and
+moves ProPresenter when the slide on screen has sung its **last line** — a
+beat early rather than late. Replayed against a real recording, every slide
+change landed between 0.6 s early and 0.2 s late, with no wrong moves through
+an instrumental.
+
+- **It knows the song's tempo.** Each song's BPM comes from its Planning
+  Center arrangement, so it knows how long a line lasts and won't leave a
+  "Gloria… Gloria…" slide after the first Gloria.
+- **It learns every slide's length** from rehearsal and Sunday, per song,
+  and stretches them when the BPM changes. A slide nobody can hear still
+  moves on time.
+- **It ignores what isn't singing.** In a guitar solo Whisper "remembers"
+  the song's lyrics; those windows are low-confidence and can't move a slide.
+- **It asks Claude, rarely**, when two slides are equally likely, on its
+  own monthly budget with the troubleshooter's key. Gemini is retired.
+- **You stay in charge.** Click a slide in ProPresenter and Follow picks up
+  from there; Back one / Forward one on the Captions page teach it too.
+- Settings → Audio → **Auto-Follow listens to** picks its channels (default:
+  the Listen board mix). ProDeck finds the best Whisper model by itself.
+
 ### New — the Waves key link reconnects itself after a restart
 
 Song Key → Waves rides a Network MIDI session to the Waves PC, and macOS

@@ -106,6 +106,17 @@ pub struct Settings {
     /// When true (and a key is set), Auto‑Follow uses Gemini to pick the slide,
     /// falling back to the local token matcher if Gemini is unavailable.
     pub gemini_match_enabled: bool,
+    /// Auto-Follow's model pick (design/AUTOFOLLOW.md) — same Anthropic key as
+    /// the troubleshooter, its own model and monthly cap. "" = Haiku.
+    pub follow_model: String,
+    pub follow_monthly_cap: u32,
+    /// Whisper's encoder context (0 = the full 30 s). 768 ≈ 15 s — enough for
+    /// a 4 s window, and about half the time on Apple Silicon.
+    pub whisper_audio_ctx: u32,
+    /// 1-based input channels Follow listens to. Empty = the overflow
+    /// ("Listen") channels when set — a board mix is far cleaner than room
+    /// mics — else the measurement channels.
+    pub caption_channels: Vec<u32>,
     /// Multi-channel (Dante) routing — 1-based channel numbers on the audio input
     /// device. The measurement engine (SPL/RTA/LUFS) mixes these channels; empty
     /// means "all channels" (legacy behaviour).
@@ -257,6 +268,10 @@ impl Default for Settings {
             assist_members: true,
             assist_monthly_cap: 500,
             gemini_match_enabled: false,
+            follow_model: String::new(),
+            follow_monthly_cap: 2000,
+            whisper_audio_ctx: 768,
+            caption_channels: Vec::new(),
             audio_measure_channels: Vec::new(),
             audio_overflow_channels: Vec::new(),
             audio_mic_channels: std::collections::HashMap::new(),
@@ -632,10 +647,15 @@ fn detect_whisper_bin() -> Option<String> {
 
 /// Find a whisper model in ProDeck's own data dir first (models/), then the
 /// Homebrew share. No other app bundle is consulted — ProDeck stands alone.
-fn detect_whisper_model() -> Option<String> {
-    if let Some(own) = dirs::data_dir().map(|d| d.join("ProDeck/models/ggml-base.en.bin")) {
-        if own.exists() {
-            return own.to_str().map(|s| s.to_string());
+pub(crate) fn detect_whisper_model() -> Option<String> {
+    // Best first: large-v3-turbo hears sung lyrics over a band far better
+    // than the small models and, with a trimmed audio context, runs a 4 s
+    // window in about a second on an M1.
+    for name in ["ggml-large-v3-turbo-q5_0.bin", "ggml-large-v3-turbo.bin", "ggml-small.en-q5_1.bin", "ggml-small.en.bin", "ggml-base.en.bin"] {
+        if let Some(own) = dirs::data_dir().map(|d| d.join("ProDeck/models").join(name)) {
+            if own.exists() {
+                return own.to_str().map(|s| s.to_string());
+            }
         }
     }
     let candidates = ["/opt/homebrew/share/whisper-cpp/ggml-base.en.bin"];

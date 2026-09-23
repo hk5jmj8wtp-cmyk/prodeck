@@ -111,6 +111,26 @@ also teaches the clock. Arm and disarm stay one button.
    status bar, Nudge.
 3. Planning Center BPM in beats; streaming Whisper when present.
 
+## Status (2026-09-23)
+
+Phases 1 and 2 built together (late is the sin, so the clock couldn't wait):
+`src/lib/follow.ts` (engine, 13 tests), `src/lyricFollow.tsx` (provider),
+`transcription.rs` (whisper-server, 4 s / 2 s, verbose_json confidence),
+`follow.rs` (Haiku call on its own cap; follow-timing.json). PCO BPM parsed
+from the included Arrangement (`bpm`, `length`, `sequence`).
+
+What the replay taught (Gloria, sung studio recording, turbo q5, -ac 768):
+- Prompting Whisper with the *upcoming* lines makes it hear them early →
+  prompt with the current slide only.
+- Advance on the last line *finishing*: first sighting − 1.5 s + one line
+  (two bars at the BPM, or this run's measured pace).
+- Low-confidence windows (lang p < 0.5 or logprob < −0.6) can confirm but
+  never move; repetition loops and filler-only matches are noise.
+- A clock learned from Follow's own early moves drags earlier each week, so
+  the heard end beats the clock; the clock covers repeated-line slides and
+  hearing failures only.
+- Greedy decoding, no temperature fallback: same words, no 5–7 s windows.
+
 ## Open questions for Zach
 
 - Does Planning Center hold BPM for your arrangements (Songs → arrangement →

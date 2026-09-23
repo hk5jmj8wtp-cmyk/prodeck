@@ -22,7 +22,7 @@ const KNOWLEDGE_CAP_CHARS: usize = 200_000;
 
 static USAGE: Mutex<Option<(String, u32)>> = Mutex::new(None); // (YYYY-MM, calls)
 
-fn month_key() -> String {
+pub(crate) fn month_key() -> String {
     // Local-date month is good enough for a cap; no chrono dependency needed.
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -75,7 +75,7 @@ fn bump_usage() -> u32 {
     next.1
 }
 
-fn key_model_cap(settings: &SettingsState) -> Result<(String, String, u32, bool, String), String> {
+pub(crate) fn key_model_cap(settings: &SettingsState) -> Result<(String, String, u32, bool, String), String> {
     let s = settings.lock().unwrap_or_else(|p| p.into_inner());
     let key = match s.assist_api_key.clone() {
         Some(k) if !k.trim().is_empty() => k.trim().to_string(),
@@ -140,7 +140,7 @@ pub(crate) fn knowledge_core() -> Vec<Value> {
     out
 }
 
-fn readable_error(status: u16, body: &str) -> String {
+pub(crate) fn readable_error(status: u16, body: &str) -> String {
     let msg = serde_json::from_str::<Value>(body)
         .ok()
         .and_then(|v| v.get("error")?.get("message")?.as_str().map(|s| s.to_string()))

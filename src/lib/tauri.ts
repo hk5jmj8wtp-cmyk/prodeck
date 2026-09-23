@@ -300,6 +300,10 @@ export interface Settings {
   avantis_watch_armed: boolean;
   public_url: string;
   gemini_match_enabled: boolean;
+  follow_model: string;
+  follow_monthly_cap: number;
+  whisper_audio_ctx: number;
+  caption_channels: number[];
   audio_measure_channels: number[];
   audio_overflow_channels: number[];
   keysend_enabled: boolean;
@@ -579,6 +583,21 @@ export const injectCaption = (text: string) =>
   invoke<void>("inject_caption", { text });
 export const startTranscription = () => invoke<void>("start_transcription");
 export const stopTranscription = () => invoke<void>("stop_transcription");
+/** The lyrics Follow expects — Whisper's decoder prompt. */
+export const transcriptionSetPrompt = (text: string) => invoke<void>("transcription_set_prompt", { text });
+
+// ---- Auto-Follow v2 (design/AUTOFOLLOW.md) -----------------------------------
+export interface FollowStatus {
+  modelReady: boolean;
+  model: string;
+  usedThisMonth: number;
+  monthlyCap: number;
+}
+export const followStatus = () => invoke<FollowStatus>("follow_status");
+/** One Messages call on Follow's own budget (same key as the troubleshooter). */
+export const followComplete = (body: unknown) => invoke<any>("follow_complete", { body });
+export const followTimingLoad = () => invoke<Record<string, any>>("follow_timing_load");
+export const followTimingSave = (timing: unknown) => invoke<void>("follow_timing_save", { timing });
 
 // ---------------------------------------------------------------------------
 // Gemini smart matching (Auto-Follow)

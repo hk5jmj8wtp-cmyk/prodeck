@@ -28,7 +28,7 @@ futures-util = "0.3"
 anyhow = "1"
 url = "2"
 mdns-sd = "0.11"
-reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "native-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "native-tls", "multipart"] }
 urlencoding = "2"
 cpal = "0.15"
 midir = "0.10"

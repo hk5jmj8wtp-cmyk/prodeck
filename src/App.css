@@ -5123,6 +5123,31 @@ select.input {
   font-style: italic;
   min-height: 1.3em;
 }
+.af-next {
+  margin: -2px 0 6px;
+  font-variant-numeric: tabular-nums;
+}
+.af-status .controls-row {
+  margin-top: 10px;
+}
+.af-songs {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--hairline);
+  display: grid;
+  gap: 4px;
+}
+.af-songs li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+}
+.af-song-name {
+  font-weight: 700;
+  font-size: 13px;
+}
 
 /* ===================== Responsive / mobile ============================= */
 /* The sidebar is always rendered now; this is the desktop "collapse" hide. */

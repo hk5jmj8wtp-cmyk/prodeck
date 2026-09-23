@@ -9,7 +9,6 @@ import {
   audioInputChannels,
   connectMidi,
   disconnectMidi,
-  geminiTest,
   assistStatus,
   assistKnowledgeDir,
   type AssistStatus,
@@ -149,11 +148,9 @@ export function SettingsPage() {
     running: false,
     port: 0,
   });
-  const [geminiMsg, setGeminiMsg] = useState("");
   // Browser clients receive ga4_key_path redacted, so including it here made
   // a working setup read as "off" everywhere except the booth.
   const ga4Ok = !!form?.ga4_property_id;
-  const [geminiBusy, setGeminiBusy] = useState(false);
   const [assist, setAssist] = useState<AssistStatus | null>(null);
   useEffect(() => {
     assistStatus().then(setAssist).catch(() => {});
@@ -189,7 +186,7 @@ export function SettingsPage() {
   }
 
   function toggleChan(
-    key: "audio_measure_channels" | "audio_overflow_channels",
+    key: "audio_measure_channels" | "audio_overflow_channels" | "caption_channels",
     ch: number,
   ) {
     setForm((f) => {
@@ -267,22 +264,6 @@ export function SettingsPage() {
       } catch (e) {
         setStatus(String(e));
       }
-    }
-  }
-
-  async function testGemini() {
-    if (!form) return;
-    setGeminiBusy(true);
-    setGeminiMsg("");
-    try {
-      await updateSettings(form); // persist the key so the backend can read it
-      await refreshSettings();
-      const r = await geminiTest();
-      setGeminiMsg(`✓ ${r}`);
-    } catch (e) {
-      setGeminiMsg(String(e));
-    } finally {
-      setGeminiBusy(false);
     }
   }
 
@@ -882,6 +863,30 @@ export function SettingsPage() {
                   Restart audio capture after changing channels.
                 </span>
               </div>
+              <div className="field wide">
+                <span>Auto-Follow listens to</span>
+                <div className="chan-row">
+                  {Array.from({ length: chCount }, (_, i) => i + 1).map((ch) => (
+                    <button
+                      key={ch}
+                      type="button"
+                      className={`chan-chip ${(form.caption_channels ?? []).includes(ch) ? "on" : ""}`}
+                      onClick={() => toggleChan("caption_channels", ch)}
+                    >
+                      <span
+                        className="chan-lvl"
+                        style={{ height: `${Math.min(100, (chanLevels[ch - 1] ?? 0) * 160)}%` }}
+                      />
+                      <span className="chan-n">{ch}</span>
+                    </button>
+                  ))}
+                </div>
+                <span className="hint">
+                  What Whisper hears for Auto-Follow and captions. Empty = the Listen channels above (a
+                  board mix). Best of all is a vocals-only feed — patch the lead-vocal group to a spare
+                  channel in Dante Controller and pick it here. Restart audio capture after changing.
+                </span>
+              </div>
             </>
           )}
           <label className="field wide">
@@ -1009,59 +1014,35 @@ export function SettingsPage() {
 
       <section className="card">
         <div className="card-head">
-          <h3 id="set-gemini">Gemini Smart Matching</h3><HelpLink section="features" />
-          <span
-            className={`chip ${
-              form.gemini_match_enabled && form.gemini_api_key ? "online" : ""
-            }`}
-          >
-            {form.gemini_match_enabled && form.gemini_api_key ? "on" : "off"}
-          </span>
+          <h3 id="set-gemini">Auto‑Follow</h3><HelpLink section="features" />
+          <span className={`chip ${form.assist_api_key ? "online" : ""}`}>{form.assist_api_key ? "model on standby" : "by ear only"}</span>
         </div>
         <p className="muted small">
-          Makes <strong>Auto‑Follow</strong> (Captions page) far more accurate: Gemini matches the
-          live transcript to your ProPresenter slide lyrics, even when words are misheard. Text
-          only — no audio leaves this machine. If Gemini is unreachable it falls back to local
-          matching automatically, so Auto‑Follow keeps working offline.
+          Auto‑Follow (Captions page) hears the singing on this Mac with Whisper — audio never leaves
+          the building — and moves ProPresenter at the end of each slide. When two slides are equally
+          likely it asks Claude to read the lyric, using the Anthropic key from the Troubleshooter
+          card above, on its own monthly budget. Without a key it follows by ear alone.
         </p>
         <div className="settings-grid">
-          <label className="field wide">
-            <span>Gemini API key (Google AI Studio)</span>
-            <input
-              className="input"
-              type="password"
-              autoComplete="off"
-              placeholder="Paste your key — stored only on this machine"
-              value={form.gemini_api_key ?? ""}
-              onChange={(e) => set("gemini_api_key", e.target.value || null)}
-            />
+          <label className="field">
+            <span>Model</span>
+            <input className="input" placeholder="claude-haiku-4-5" value={form.follow_model ?? ""}
+              onChange={(e) => set("follow_model", e.target.value)} />
           </label>
-          <label className="field check">
-            <input
-              type="checkbox"
-              checked={form.gemini_match_enabled}
-              onChange={(e) => set("gemini_match_enabled", e.target.checked)}
-            />
-            <span>Use Gemini for Auto‑Follow matching</span>
+          <label className="field">
+            <span>Model calls per month (0 = no cap)</span>
+            <input className="input" type="number" min={0} value={form.follow_monthly_cap ?? 2000}
+              onChange={(e) => { const n = parseInt(e.target.value); if (Number.isFinite(n) && n >= 0) set("follow_monthly_cap", n); }} />
           </label>
-          <div className="field btn-field">
-            <span>&nbsp;</span>
-            <button
-              className="btn"
-              onClick={testGemini}
-              disabled={geminiBusy || !form.gemini_api_key}
-            >
-              {geminiBusy ? "Testing…" : "Save & Test key"}
-            </button>
-          </div>
+          <label className="field">
+            <span>Whisper audio context (0 = full)</span>
+            <input className="input" type="number" min={0} max={1500} value={form.whisper_audio_ctx ?? 768}
+              onChange={(e) => { const n = parseInt(e.target.value); if (Number.isFinite(n) && n >= 0) set("whisper_audio_ctx", n); }} />
+          </label>
         </div>
-        {geminiMsg && (
-          <p className={geminiMsg.startsWith("✓") ? "hint" : "error"}>{geminiMsg}</p>
-        )}
         <p className="hint">
-          Get a free key at <code>aistudio.google.com/apikey</code>. Your key is stored only on
-          this machine; the live audio is never sent to Google — only the text transcript and your
-          slide lyrics.
+          Whisper's model: leave the path under Audio empty and ProDeck uses the best one in its models
+          folder (large‑v3‑turbo). What it listens to is under Audio → “Auto‑Follow listens to”.
         </p>
       </section>
 

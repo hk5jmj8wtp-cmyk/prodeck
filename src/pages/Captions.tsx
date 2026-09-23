@@ -171,44 +171,44 @@ export function Captions() {
 // Full-auto lyric follow: drives ProPresenter slides from the live audio.
 function AutoFollowCard() {
   const lf = useLyricFollow();
-  const conf = Math.round(lf.status.confidence * 100);
+  const v = lf.view;
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!lf.armed) return;
+    const t = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(t);
+  }, [lf.armed]);
+  const due = v.dueAt != null && v.slideStartedAt != null ? { left: Math.max(0, v.dueAt - now), frac: Math.min(1, (now - v.slideStartedAt) / Math.max(1, v.dueAt - v.slideStartedAt)) } : null;
+  const via = { heard: "heard it", clock: "on the clock", model: "the model read the lyric", pro: "moved in ProPresenter" } as const;
+  const hearing = { words: "hearing words", music: "music only", quiet: "quiet", idle: "idle" } as const;
   return (
     <section className="card">
       <div className="card-head">
         <h3>Auto‑Follow ProPresenter</h3>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {lf.armed && <span className={`chip ${v.hearing === "words" ? "online" : ""}`}>{hearing[v.hearing]}</span>}
           <span
-            className={`chip ${lf.geminiEnabled ? "online" : ""}`}
+            className={`chip ${lf.modelReady ? "online" : ""}`}
             title={
-              lf.geminiEnabled
-                ? "Gemini smart matching is on (Settings → Gemini)"
-                : "Using local word-overlap matching. Turn on Gemini in Settings for better accuracy."
+              lf.modelReady
+                ? "When two slides are equally likely, Follow asks Claude (Haiku) to read the lyric — a few times a song, on its own monthly budget."
+                : "No Anthropic key (Settings → Troubleshooter): Follow decides by ear alone."
             }
           >
-            {lf.geminiEnabled ? "✨ Gemini" : "local match"}
+            {lf.modelReady ? "model on standby" : "by ear only"}
           </span>
-          <span className={`chip ${lf.armed ? "online" : ""}`}>
-            {lf.armed ? (lf.building ? "indexing…" : "following") : "off"}
-          </span>
+          <span className={`chip ${lf.armed ? "online" : ""}`}>{lf.armed ? (lf.building ? "reading playlist…" : "following") : "off"}</span>
         </div>
       </div>
-      {/* Three sentences, in the order a volunteer needs them: what it does,
-          how to start, how to take it back. Setup jargon stays in Settings. */}
+      {/* What it does, how to start, how to take it back. */}
       <p className="muted small">
-        Auto-follow listens to the singing and advances ProPresenter slides by
-        itself. To run it: press <strong>Start Listening</strong> above (pick
-        the lead-vocal mic — a full band mix is hard to recognize), choose the
-        playlist, then <strong>Start auto-follow</strong>. If it ever jumps to
-        the wrong slide, press <strong>Stop follow</strong> and click slides
-        yourself — nothing breaks.
+        Follow listens to the board mix, finds the song in the playlist, and changes the slide as each slide's last line
+        finishes — a beat early rather than late. It learns how long every slide lasts from rehearsal and Sunday, and uses
+        each song's BPM from Planning Center. Choose the playlist and press <strong>Start auto‑follow</strong>. Clicking a
+        slide in ProPresenter always wins; Follow picks up from there.
       </p>
       <div className="controls-row">
-        <select
-          className="input"
-          value={lf.playlistId ?? ""}
-          onChange={(e) => lf.setPlaylist(e.target.value || null)}
-          disabled={lf.armed}
-        >
+        <select className="input" value={lf.playlistId ?? ""} onChange={(e) => lf.setPlaylist(e.target.value || null)} disabled={lf.armed}>
           <option value="">Follow which playlist…</option>
           {lf.playlists.map((p) => (
             <option key={p.uuid} value={p.uuid}>
@@ -226,49 +226,53 @@ function AutoFollowCard() {
           </button>
         )}
       </div>
-      <label className="af-sens">
-        <span>Sensitivity</span>
-        <input
-          type="range"
-          min={0.15}
-          max={0.6}
-          step={0.05}
-          value={lf.sensitivity}
-          onChange={(e) => lf.setSensitivity(parseFloat(e.target.value))}
-        />
-        <span className="muted small">
-          {Math.round(lf.sensitivity * 100)}% sure before changing slides —
-          drag left to switch faster, right to switch more carefully
-        </span>
-      </label>
-      {lf.geminiNote && (
+      {lf.modelNote && (
         <p className="error" style={{ marginTop: 6 }}>
-          ⚠ {lf.geminiNote}
+          ⚠ {lf.modelNote}
         </p>
       )}
       {lf.armed && (
         <div className="af-status">
           <div className="af-now">
             <span className="af-label">NOW</span>
-            <span className="af-song">{lf.status.song || "—"}</span>
-            {lf.status.slide != null && (
-              <span className="af-slide">slide {lf.status.slide + 1}</span>
+            <span className="af-song">{v.song || "waiting for a song…"}</span>
+            {v.slide != null && (
+              <span className="af-slide">
+                {v.section ? `${v.section} · ` : ""}slide {v.slide + 1}
+              </span>
             )}
-            <span className="af-conf" title={lf.status.via ? `matched by ${lf.status.via}` : ""}>
-              {conf}%{lf.status.via === "gemini" ? " ✨" : ""}
-            </span>
+            {v.bpm ? <span className="af-conf">{Math.round(v.bpm)} BPM</span> : null}
           </div>
-          <div className="af-bar">
-            <div className="af-fill" style={{ width: `${conf}%` }} />
+          <div className="af-bar" title={due ? "How far through this slide, by the learned clock" : "No learned length for this slide yet"}>
+            <div className="af-fill" style={{ width: `${Math.round((due?.frac ?? 0) * 100)}%` }} />
           </div>
-          <div className="af-heard">{lf.status.text || "listening…"}</div>
-          <div className="muted small">
-            {lf.ready
-              ? `${lf.slideCount} slides indexed`
-              : lf.building
-                ? "Indexing slides…"
-                : "No slides indexed yet"}
+          <div className="af-next muted small">
+            {due ? (due.left > 0 ? `next slide in ${(due.left / 1000).toFixed(1)} s` : "next slide due now") : v.song ? "next slide when its last line is heard" : ""}
+            {v.lastVia ? ` · last move: ${via[v.lastVia]}${v.lastReason && v.lastVia !== "pro" ? ` (${v.lastReason})` : ""}` : ""}
           </div>
+          <div className="af-heard">{v.heard || "listening…"}</div>
+          <div className="controls-row">
+            <button className="btn" onClick={() => lf.nudge(-1)} disabled={v.slide == null}>
+              ◀ Back one
+            </button>
+            <button className="btn" onClick={() => lf.nudge(1)} disabled={v.slide == null}>
+              Forward one ▶
+            </button>
+          </div>
+          {lf.songs.length > 0 && (
+            <ul className="af-songs">
+              {lf.songs.map((s) => (
+                <li key={s.name}>
+                  <span className="af-song-name">{s.name}</span>
+                  <span className="muted small">
+                    {s.slides} lyric slides · {s.bpm ? `${Math.round(s.bpm)} BPM` : "no BPM in Planning Center"}
+                    {s.learned ? ` · timing learned for ${s.learned}` : " · no timing yet"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {!lf.ready && !lf.building && <div className="muted small">No songs found in that playlist.</div>}
         </div>
       )}
     </section>

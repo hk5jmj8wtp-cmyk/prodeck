@@ -652,11 +652,15 @@ pub async fn start_audio_capture(
             .filter(|&i| i < channels)
             .collect()
     };
-    let (measure_idx, overflow_idx) = {
+    let (measure_idx, overflow_idx, caption_idx) = {
         let s = settings.lock().unwrap_or_else(|p| p.into_inner());
+        // What Follow/captions hear: their own channels, else the Listen feed
+        // (a board mix), else the measurement mix (room mics — worst for words).
+        let cap = if !s.caption_channels.is_empty() { &s.caption_channels } else { &s.audio_overflow_channels };
         (
             Arc::new(to_idx(&s.audio_measure_channels)),
             Arc::new(to_idx(&s.audio_overflow_channels)),
+            Arc::new(to_idx(cap)),
         )
     };
     let overflow_tx = state.overflow_tx.clone();
@@ -704,6 +708,7 @@ pub async fn start_audio_capture(
                 let app_cb = app_cb.clone();
                 let measure_idx = measure_idx.clone();
                 let overflow_idx = overflow_idx.clone();
+                let caption_idx = caption_idx.clone();
                 let overflow_tx = overflow_tx.clone();
                 let mut meter = LoudnessMeter::new(sample_rate);
                 dev.build_input_stream(
@@ -714,6 +719,7 @@ pub async fn start_audio_capture(
                         }
                         let frames = data.len() / channels.max(1);
                         let mut chunk: Vec<f32> = Vec::with_capacity(frames);
+                        let mut caption: Vec<f32> = Vec::with_capacity(if caption_idx.is_empty() { 0 } else { frames });
                         let mut overflow_pcm: Vec<i16> =
                             Vec::with_capacity(if overflow_idx.is_empty() { 0 } else { frames });
                         let mut lufs_out: Option<LufsReading> = None;
@@ -754,6 +760,13 @@ pub async fn start_audio_capture(
                                 lufs_out = Some(r);
                             }
                             chunk.push(s);
+                            if !caption_idx.is_empty() {
+                                let mut acc = 0.0f32;
+                                for &i in caption_idx.iter() {
+                                    acc += f32::from_sample(data[base + i]);
+                                }
+                                caption.push(acc / caption_idx.len() as f32);
+                            }
                             // Overflow mono mix → i16 for the Listen stream.
                             if !overflow_idx.is_empty() {
                                 let mut acc = 0.0f32;
@@ -778,7 +791,7 @@ pub async fn start_audio_capture(
                         {
                             // Long buffer for transcription (drained elsewhere).
                             let mut buf = inner_cb.mono.lock().unwrap_or_else(|p| p.into_inner());
-                            buf.extend_from_slice(&chunk);
+                            buf.extend_from_slice(if caption_idx.is_empty() { &chunk } else { &caption });
                             let cap = sr * 30;
                             if buf.len() > cap {
                                 let excess = buf.len() - cap;
