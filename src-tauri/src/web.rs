@@ -669,6 +669,20 @@ async fn handle_conn(
                 else { crate::tap::override_core(&app, Some(text.clone())).await.map(|_| json!({"held": text})) }
             }
             "tap-auto" => crate::tap::resume_core(&app).await.map(|_| json!({"resumed": true})),
+            // Song key → Waves by hand: &text=G (C, C#/Db … B) or &text=off
+            // (Tune off). The booth's key-send loop does the sending, with
+            // its own dedupe and reconnect — same path as a phone's press.
+            "key" => {
+                if text.eq_ignore_ascii_case("off") {
+                    crate::midi::keysend_request_core(&app, "off", "Stream Deck");
+                    Ok(json!({ "sent": "off", "program": 12 }))
+                } else if let Some(pc) = crate::midi::pitch_class(&text) {
+                    crate::midi::keysend_request_core(&app, &text, "Stream Deck");
+                    Ok(json!({ "sent": text, "program": pc }))
+                } else {
+                    Err("add &text=<key> (C, C#, Db … B) or &text=off".into())
+                }
+            }
             "tap-state" => crate::tap::edge_state_core(&app).await,
             // ---- readouts for Stream Deck display keys (poll into variables)
             "spl-state" => {
@@ -883,7 +897,33 @@ async fn handle_conn(
                         .unwrap_or(empty);
                     (crew, keys)
                 };
+                // Song key → Waves, as numbers a key's feedback can compare:
+                // program 0–11 = C…B, 12 = Tune off; null = nothing yet.
+                let song_key = {
+                    let ks = app.state::<crate::midi::KeySendState>();
+                    let v = ks.0.lock().unwrap_or_else(|p| p.into_inner()).clone();
+                    let sent = v.get("lastProgram").and_then(|x| x.as_u64());
+                    let live = v.get("liveKey").and_then(|x| x.as_str()).and_then(crate::midi::pitch_class);
+                    let display = match sent {
+                        None => "—".to_string(),
+                        Some(12) => "OFF".to_string(),
+                        Some(_) => v.get("lastKey").and_then(|x| x.as_str()).unwrap_or("—").to_string(),
+                    };
+                    json!({
+                        "display": display,
+                        // The live song is in one key and the rig in another.
+                        "mismatch": matches!((sent, live), (Some(s), Some(l)) if s != l as u64),
+                        "enabled": v.get("enabled").and_then(|x| x.as_bool()).unwrap_or(false),
+                        "sent": v.get("lastProgram").cloned().unwrap_or(Value::Null),
+                        "sentName": v.get("lastKey").cloned().unwrap_or(Value::Null),
+                        "live": v.get("liveKey").and_then(|x| x.as_str()).and_then(crate::midi::pitch_class),
+                        "liveName": v.get("liveKey").cloned().unwrap_or(Value::Null),
+                        "midi": v.get("midiConnected").and_then(|x| x.as_bool()).unwrap_or(false),
+                        "rig": v.pointer("/rtp/connected").and_then(|x| x.as_bool()),
+                    })
+                };
                 Ok(json!({
+                    "songKey": song_key,
                     "tap": tap.get("state").cloned().unwrap_or(Value::Null),
                     "spl": spl,
                     "arrived": count,

@@ -164,6 +164,27 @@ pub fn disconnect_midi(state: tauri::State<'_, MidiState>, app: AppHandle) {
 
 pub struct KeySendState(pub Mutex<serde_json::Value>);
 
+/// "G", "C#", "Db", "Bbm", "F# major" → 0–11 (C = 0). None for anything else.
+pub fn pitch_class(key: &str) -> Option<u8> {
+    let mut ch = key.trim().chars();
+    let base: i8 = match ch.next()?.to_ascii_uppercase() {
+        'C' => 0,
+        'D' => 2,
+        'E' => 4,
+        'F' => 5,
+        'G' => 7,
+        'A' => 9,
+        'B' => 11,
+        _ => return None,
+    };
+    let acc: i8 = match ch.next() {
+        Some('#') | Some('♯') => 1,
+        Some('b') | Some('♭') => -1,
+        _ => 0,
+    };
+    Some((base + acc).rem_euclid(12) as u8)
+}
+
 #[tauri::command]
 pub fn keysend_set_state(mut state: serde_json::Value, st: tauri::State<'_, KeySendState>, app: tauri::AppHandle) {
     // The rtpMIDI session keeper's view rides along (see netmidi.rs).
@@ -202,4 +223,20 @@ pub fn keysend_request_core(app: &tauri::AppHandle, key: &str, who: &str) {
 #[tauri::command]
 pub fn keysend_request(key: String, app: tauri::AppHandle) {
     keysend_request_core(&app, &key, "booth");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pitch_class;
+    #[test]
+    fn keys_to_pitch_classes() {
+        assert_eq!(pitch_class("C"), Some(0));
+        assert_eq!(pitch_class("C#"), Some(1));
+        assert_eq!(pitch_class("Db"), Some(1));
+        assert_eq!(pitch_class("Bbm"), Some(10));
+        assert_eq!(pitch_class("Cb"), Some(11));
+        assert_eq!(pitch_class("g"), Some(7));
+        assert_eq!(pitch_class("off"), None);
+        assert_eq!(pitch_class(""), None);
+    }
 }
