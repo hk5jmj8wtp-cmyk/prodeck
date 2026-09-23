@@ -711,7 +711,7 @@ The more specific the better: what you pressed, what you expected, what happened
     id: "routing-map",
     group: "Sound console",
     title: "Building your routing map",
-    aliases: ["routing", "patch list", "which channel is which socket", "signal map", "where does channel 39 come from", "paste patch list"],
+    aliases: ["routing", "patch list", "which channel is which socket", "signal map", "where does channel 39 come from", "paste patch list", "stage pockets", "stage panel", "which socket do i plug into", "floor box"],
     body: `**Routing** is every console channel, traced back to the thing that makes the sound: the stage socket, the wireless pack, the playback laptop. It is written for the volunteer who has to answer "why is there no sound" alone.
 
 The one rule: **channel names change every service; numbers don't.** The map is keyed by numbers — console channel, door socket, receiver slot — and names arrive live from the desk. Who is singing into channel 39 comes from Planning Center.
@@ -726,6 +726,8 @@ To build yours:
 - Click a row for its steps — what to walk to when that channel is dead. Every kind of source starts with a sensible template; edit the text to name your building's receivers, panels and sockets.
 - Tick **Dead** on a socket that looks normal and goes nowhere. The walk routes around it.
 - **Mark all verified** stamps today's date on every row. The map nags after 90 days; maps rot.
+
+**Stage pockets.** The **Stage** tab draws the wall: each floor pocket or panel as its sockets, and for every socket the door input it reaches and the console channel that is — with the desk's live mute and any external insert on that channel. Add a pocket in Edit with a name and its socket range (Stage right front, 41–50). Free sockets are dashed; mark one **dead** when it looks normal and goes nowhere, and the walk will route around it. Phones get the same tiles under No sound? → Stage.
 
 > Until you paste your own list, the page shows an example sixteen-channel church. It says so at the top.`,
     related: ["routing-walk", "console"],

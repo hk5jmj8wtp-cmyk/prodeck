@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { usePco } from "../pcoStore";
+import { StagePockets } from "./StagePockets";
 import {
   ageText,
   channelsForDesk,
@@ -58,7 +59,7 @@ export function liveName(n: RNode, live: LiveView): string {
 
 /* ------------------------------------------------------------ picker */
 
-type Mode = "people" | "channels" | "places";
+type Mode = "people" | "channels" | "places" | "stage";
 
 export function WalkPicker({
   map,
@@ -73,6 +74,7 @@ export function WalkPicker({
 }) {
   const people = useWalkPeople(map);
   const places = map.nodes.filter((n) => n.kind === "destination");
+  const hasStage = (map.panels ?? []).length > 0;
   const [mode, setMode] = useState<Mode>(people.length ? "people" : "channels");
   const [q, setQ] = useState("");
 
@@ -96,6 +98,11 @@ export function WalkPicker({
         {places.length > 0 && (
           <button className={mode === "places" ? "on" : ""} onClick={() => setMode("places")}>
             Places
+          </button>
+        )}
+        {hasStage && (
+          <button className={mode === "stage" ? "on" : ""} onClick={() => setMode("stage")}>
+            Stage
           </button>
         )}
       </div>
@@ -173,6 +180,8 @@ export function WalkPicker({
           })}
         </ul>
       )}
+
+      {!hits && mode === "stage" && <StagePockets map={map} live={live} compact={compact} onWalk={onPick} />}
 
       {!hits && mode === "places" && (
         <ul className="rw-list">

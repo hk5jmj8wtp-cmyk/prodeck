@@ -3,6 +3,7 @@ import { IS_DEMO, IS_WEB } from "../lib/tauri";
 import { askConfirm } from "../lib/dialogs";
 import { useRouting, useRoutingLive } from "../routingStore";
 import { WalkPicker, WalkView } from "../components/RoutingWalk";
+import { StagePockets } from "../components/StagePockets";
 import {
   ageText,
   applyRow,
@@ -13,6 +14,7 @@ import {
   node,
   parsePatchList,
   removeChannel,
+  setSocketDead,
   slug,
   STALE_AFTER_MS,
   stepsFor,
@@ -37,7 +39,7 @@ const RoutingGraph = lazy(() => import("../components/RoutingGraph"));
 // file has been read successfully once — a map a church typed in is not ours
 // to replace with a seed.
 
-type Tab = "channels" | "map" | "walk";
+type Tab = "channels" | "stage" | "map" | "walk";
 
 const PORT_OPTIONS: { value: Transport | ""; label: string }[] = [
   { value: "", label: "— not patched" },
@@ -161,6 +163,9 @@ export function RoutingPage() {
           <button className={tab === "channels" ? "on" : ""} onClick={() => setTab("channels")}>
             Channels
           </button>
+          <button className={tab === "stage" ? "on" : ""} onClick={() => setTab("stage")}>
+            Stage
+          </button>
           <button className={tab === "map" ? "on" : ""} onClick={() => setTab("map")}>
             Map
           </button>
@@ -196,6 +201,25 @@ export function RoutingPage() {
         <div className="banner rt-note">
           <strong>This is the example map</strong> that ships with ProDeck — a sixteen-channel church that isn't yours. Press Edit, then <strong>Paste patch list</strong> with your own channels, and it is replaced.
         </div>
+      )}
+
+      {tab === "stage" && (
+        <>
+          <p className="muted small routing-intro">
+            The wall, pocket by pocket: every socket, what SLink input it reaches and which console channel that is, with the desk's live state. Dashed sockets are free; struck ones are marked dead. Click a socket to walk its channel.
+          </p>
+          <StagePockets
+            map={map}
+            live={live}
+            editing={editing}
+            onWalk={(id) => {
+              setWalkTarget(id);
+              setTab("walk");
+            }}
+            onDead={(port, n, dead) => mutate((m) => setSocketDead(m, port, n, dead))}
+            onPanels={(panels) => mutate((m) => void (m.panels = panels))}
+          />
+        </>
       )}
 
       {tab === "map" && (

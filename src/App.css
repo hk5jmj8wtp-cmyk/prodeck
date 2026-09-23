@@ -8848,3 +8848,196 @@ select.input {
   margin-left: auto;
   color: var(--faint);
 }
+
+/* ---------------------------------------------------------------------
+   Routing — Stage pockets. The wall as tiles: solid = live socket, dashed =
+   free, struck = marked dead. Numbers mono, names sans. */
+.sp {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.sp-panel {
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 14px 16px 16px;
+}
+.sp-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.sp-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.sp-range {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.sp-note {
+  margin: -4px 0 10px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.sp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 8px;
+}
+.sp-tile {
+  position: relative;
+  min-height: 84px;
+  padding: 8px 9px 9px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  border-left: 3px solid #c98a2b;
+  background: var(--surface);
+  font-size: 12px;
+  line-height: 1.3;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sp-tile[role="button"] {
+  cursor: pointer;
+}
+.sp-tile[role="button"]:hover {
+  border-color: var(--accent-line);
+}
+.sp-tile.free {
+  border-style: dashed;
+  border-left-color: var(--border-hi);
+  color: var(--muted);
+  background: transparent;
+}
+.sp-tile.dead {
+  border-style: dashed;
+  border-left-color: var(--warn);
+  color: var(--muted);
+}
+.sp-tile.dead .sp-num {
+  text-decoration: line-through;
+}
+.sp-tile.muted {
+  background: var(--warn-soft);
+}
+.sp-tile.stereo {
+  border-left-color: #2f8f8a;
+}
+.sp-num {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.sp-tile.free .sp-num,
+.sp-tile.dead .sp-num {
+  color: var(--muted);
+}
+.sp-state {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+}
+.sp-door {
+  font-size: 10px;
+  color: #c98a2b;
+  letter-spacing: 0.02em;
+}
+.sp-tile.stereo .sp-door {
+  color: #2f8f8a;
+}
+.sp-ch {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sp-chnum {
+  color: var(--muted);
+  font-weight: 500;
+  margin-right: 2px;
+}
+.sp-side {
+  margin-left: 4px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.sp-desk,
+.sp-twin,
+.sp-insert {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sp-insert {
+  color: var(--accent-hi);
+}
+.sp-live.bad {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--warn);
+}
+.sp-deadbtn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font: inherit;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+}
+.sp-deadbtn:hover {
+  color: var(--text);
+}
+.sp-edit,
+.sp-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+.sp-edit-label {
+  flex: 1 1 180px;
+  min-width: 160px;
+  padding: 5px 8px;
+  font-size: 12.5px;
+}
+.sp-edit-port {
+  width: 80px;
+  padding: 5px 8px;
+  font-size: 12.5px;
+}
+.sp-edit-n {
+  width: 64px;
+  padding: 5px 8px;
+  font-size: 12.5px;
+  text-align: right;
+}
+.sp-edit-note {
+  flex: 2 1 220px;
+  padding: 5px 8px;
+  font-size: 12.5px;
+}
+.sp-add {
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+.sp-empty {
+  color: var(--muted);
+  font-size: 13px;
+}

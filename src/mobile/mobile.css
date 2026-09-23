@@ -1230,3 +1230,14 @@
 .crew .rw-watch-label { font-family: var(--font-mono); }
 .crew .rw-foot { border-top: none; color: var(--dim); font-family: var(--font-mono); font-size: 0.6875rem; }
 .crew .rw-back { font-size: 1.875rem; min-width: 44px; min-height: 44px; }
+
+/* Stage pockets on a phone: two tiles across, bigger numbers, tap = walk. */
+.crew .sp { gap: 12px; }
+.crew .sp-panel { background: none; border: none; padding: 0; }
+.crew .sp-title { font-size: 1.0625rem; letter-spacing: -0.015em; }
+.crew .sp-range { font-family: var(--font-mono); font-size: 0.6875rem; letter-spacing: 0.12em; text-transform: uppercase; }
+.crew .sp-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.crew .sp-tile { background: var(--panel); border-radius: 14px; min-height: 92px; padding: 10px 12px; font-size: 0.8125rem; }
+.crew .sp-tile.free { background: transparent; box-shadow: none; }
+.crew .sp-num { font-family: var(--font-mono); font-size: 1.125rem; }
+.crew .sp-door, .crew .sp-desk, .crew .sp-twin, .crew .sp-insert, .crew .sp-state { font-family: var(--font-mono); }

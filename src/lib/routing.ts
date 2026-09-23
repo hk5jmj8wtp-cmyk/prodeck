@@ -82,6 +82,18 @@ export interface KnownIssue {
   severity: "fix" | "know";
 }
 
+/** A stage pocket / panel / floor box: a named run of sockets in one
+ *  numbering space. The wall, as the volunteer sees it. */
+export interface Panel {
+  id: string;
+  label: string;
+  /** Numbering space of the sockets, matching source `ref.port` ("stage"). */
+  port: string;
+  from: number;
+  to: number;
+  note?: string;
+}
+
 export interface RoutingMap {
   schema: 2;
   /** Shipped example, not this church's map. UI says so until the first edit. */
@@ -91,6 +103,7 @@ export interface RoutingMap {
   edges: REdge[];
   rules: Rule[];
   watchlist: KnownIssue[];
+  panels?: Panel[];
 }
 
 /* ------------------------------------------------------------ helpers */
@@ -432,7 +445,7 @@ export function applyRow(map: RoutingMap, row: RowInput): RNode {
  *  their own steps or a note were written on purpose and stay. */
 export function pruneOrphanSources(map: RoutingMap) {
   map.nodes = map.nodes.filter(
-    (n) => n.kind !== "source" || n.steps?.length || n.note || map.edges.some((e) => e.from === n.id),
+    (n) => n.kind !== "source" || n.dead || n.steps?.length || n.note || map.edges.some((e) => e.from === n.id),
   );
 }
 
@@ -541,6 +554,7 @@ export function normalizeMap(raw: unknown): Loaded | null {
       edges: r.edges as REdge[],
       rules: Array.isArray(r.rules) ? (r.rules as Rule[]) : builtinRules(),
       watchlist: Array.isArray(r.watchlist) ? (r.watchlist as KnownIssue[]) : [],
+      panels: Array.isArray(r.panels) ? (r.panels as Panel[]) : undefined,
     };
     return { map, migrated: false };
   }
@@ -900,6 +914,90 @@ export function ageText(at: number | undefined, now: number): string {
 
 export const STALE_AFTER_MS = 90 * 86_400_000;
 
+/* ------------------------------------------------------- stage pockets */
+
+/** One socket on the wall, cross-referenced through the map. */
+export interface SocketView {
+  n: number;
+  /** The source node for this socket, if any channel is patched from it. */
+  sourceId?: string;
+  dead: boolean;
+  /** Nothing on the map uses it: free at the desk — or a tie line nobody wrote down. */
+  free: boolean;
+  /** Where it lands: door + door socket + console channel(s). Usually one; two when a socket feeds a shared preamp. */
+  lands: { doorId: string; doorLabel: string; at: string; channelId: string; channelIndex: string; channelLabel: string; deskKey?: string; stereoSide?: "L" | "R" }[];
+  /** Console channels on this socket that are inserted through an external rig (an output edge to a destination). */
+  inserts: string[];
+}
+
+export interface PanelView {
+  panel: Panel;
+  sockets: SocketView[];
+  live: number;
+}
+
+/** The wall: every socket of every panel, with what the map knows about it. */
+export function panelViews(map: RoutingMap): PanelView[] {
+  const panels = map.panels ?? [];
+  return panels.map((panel) => {
+    const sockets: SocketView[] = [];
+    for (let n = panel.from; n <= panel.to; n++) {
+      const src = map.nodes.find((x) => x.kind === "source" && x.ref?.port === panel.port && socketCovers(x.ref.index, n));
+      const view: SocketView = { n, sourceId: src?.id, dead: !!src?.dead, free: !src, lands: [], inserts: [] };
+      if (src) {
+        for (const e of edgesOutOf(map, src.id)) {
+          const door = node(map, e.to);
+          if (!door || door.kind !== "door" || !e.at) continue;
+          for (const dc of map.edges.filter((x) => x.from === door.id && x.at === e.at)) {
+            const ch = node(map, dc.to);
+            if (!ch || ch.kind !== "channel") continue;
+            const side = sideOf(src.ref!.index, n);
+            view.lands.push({ doorId: door.id, doorLabel: door.label, at: side ? sideAt(e.at, side) : e.at, channelId: ch.id, channelIndex: ch.ref?.index ?? "", channelLabel: ch.label, deskKey: deskKeyFor(ch), stereoSide: side });
+            for (const out of edgesOutOf(map, ch.id)) {
+              const o = node(map, out.to);
+              if (o?.kind === "output") {
+                const dest = edgesOutOf(map, o.id).map((x) => node(map, x.to)).find((d) => d?.kind === "destination");
+                if (dest && !view.inserts.includes(dest.label)) view.inserts.push(dest.label);
+              }
+            }
+          }
+        }
+      }
+      sockets.push(view);
+    }
+    return { panel, sockets, live: sockets.filter((s) => !s.free && !s.dead).length };
+  });
+}
+
+/** "41+42" covers 41 and 42; "17" covers 17. */
+function socketCovers(index: string, n: number): boolean {
+  return index
+    .split(/\s*[+\-–]\s*/)
+    .map((x) => parseInt(x, 10))
+    .includes(n);
+}
+function sideOf(index: string, n: number): "L" | "R" | undefined {
+  const parts = index.split(/\s*[+\-–]\s*/).map((x) => parseInt(x, 10));
+  if (parts.length < 2) return undefined;
+  return parts[0] === n ? "L" : "R";
+}
+/** The door socket for one side of a stereo pair: "19+20" → L 19, R 20. */
+function sideAt(at: string, side: "L" | "R"): string {
+  const parts = at.split(/\s*[+\-–]\s*/);
+  return parts.length < 2 ? at : side === "L" ? parts[0] : parts[1];
+}
+
+/** Mark a socket dead (or not). Creates the source node if the map has never heard of it. */
+export function setSocketDead(map: RoutingMap, port: string, n: number, dead: boolean) {
+  let src = map.nodes.find((x) => x.kind === "source" && x.ref?.port === port && socketCovers(x.ref.index, n));
+  if (!src) {
+    if (!dead) return;
+    src = { id: `src:${slug(port)}:${n}`, kind: "source", label: port === "stage" ? `Stage socket ${n}` : `${port} ${n}`, sourceKind: "socket", ref: { port, index: String(n) } };
+    map.nodes.push(src);
+  }
+  src.dead = dead || undefined;
+}
+
 /* ------------------------------------------------------- the example */
 
 /**
@@ -929,6 +1027,10 @@ export function exampleMap(): RoutingMap {
   for (const r of rows) applyRow(map, r);
   const d = node(map, doorId("slink"));
   if (d) d.label = "Stage box";
+  map.panels = [
+    { id: "pan-drums", label: "Drum riser pocket", port: "stage", from: 1, to: 8 },
+    { id: "pan-keys", label: "Keys pocket", port: "stage", from: 9, to: 12 },
+  ];
   map.watchlist.push({
     id: "w-example",
     severity: "know",

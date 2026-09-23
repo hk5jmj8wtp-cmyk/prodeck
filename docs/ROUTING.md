@@ -62,6 +62,16 @@ skipped in the walk and the volunteer is told to use the one beside it.
 90 days. Maps rot; the person who just fixed a mic is the best verifier there
 will ever be.
 
+### Stage pockets
+
+**Routing → Stage** draws the wall: each floor pocket (panel, box) as its
+sockets, and for every socket the door input it reaches and the console
+channel that is, with the desk's live state and any external insert on the
+channel. Add pockets in Edit — a name and a socket range. Free sockets are
+dashed; mark a socket **dead** when it looks normal and goes nowhere. Phones
+get the same tiles under *No sound? → Stage*, which is where "which socket do
+I plug into" gets answered on the floor.
+
 ### Things to watch
 
 Known faults with a symptom — "synth L and R come from different machines".

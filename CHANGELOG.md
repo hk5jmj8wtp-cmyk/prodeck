@@ -71,6 +71,16 @@ Maps saved by the old Routing page are converted on first open with every
 step kept, and nothing is written until you press Save. Until you paste your
 own list, the page shows a clearly-labelled sixteen-channel example.
 
+### New — Routing → Stage: the wall, pocket by pocket
+
+Every stage pocket drawn as its sockets. Each tile shows the socket number,
+the stage-box input it reaches, the console channel that becomes, the desk's
+live mute, and whether that channel runs through an outboard rig. Free
+sockets are dashed; mark one dead when it looks normal and goes nowhere.
+Pockets are yours to name and range in Edit. Phones get the same tiles under
+**No sound? → Stage**, so "which hole do I plug into" is answered standing at
+the wall.
+
 ### Walking to a place reads from the far end
 
 Picking a destination or an output in **No sound?** — the stream, the lobby

@@ -10,9 +10,11 @@ import {
   migrateChains,
   normalizeMap,
   parsePatchList,
+  panelViews,
   parsePort,
   parseUpstream,
   searchNodes,
+  setSocketDead,
   toPatchList,
   traceUpstream,
   twinsOf,
@@ -256,5 +258,52 @@ describe("migration from the schema-1 chains", () => {
     const w = walk(ex, chId("12"), blind)!;
     expect(w.subtitle).toBe("channel 12 · Receiver B · pack 1");
     expect(walk(ex, chId("16"), blind)!.watch).toHaveLength(1);
+  });
+});
+
+describe("stage pockets", () => {
+  it("cross-references each socket through SLink to the console channel", () => {
+    const map = emptyMap();
+    for (const r of parsePatchList(`1\tKick IN\tSLink\t1\tstage 1
+2\tKick Out\tSLink\t7\tstage 17
+17-18\tEG1 (st)\tSLink\t19+20\tstage 41+42`).rows) applyRow(map, r);
+    map.panels = [
+      { id: "lb", label: "Stage left back", port: "stage", from: 1, to: 10 },
+      { id: "rf", label: "Stage right front", port: "stage", from: 41, to: 50 },
+    ];
+    const [lb, rf] = panelViews(map);
+    expect(lb.sockets).toHaveLength(10);
+    expect(lb.live).toBe(1);
+    expect(lb.sockets[0]).toMatchObject({ n: 1, free: false, dead: false });
+    expect(lb.sockets[0].lands[0]).toMatchObject({ doorLabel: "SLink", at: "1", channelIndex: "1", channelLabel: "Kick IN", deskKey: "input:1" });
+    expect(lb.sockets[4]).toMatchObject({ n: 5, free: true });
+    // A stereo pair: 41 is the left half on SLink 19, 42 the right on 20.
+    expect(rf.sockets[0].lands[0]).toMatchObject({ at: "19", stereoSide: "L", channelIndex: "17-18" });
+    expect(rf.sockets[1].lands[0]).toMatchObject({ at: "20", stereoSide: "R" });
+    expect(rf.live).toBe(2);
+  });
+  it("marks a socket dead even when nothing was patched from it, and keeps it", () => {
+    const map = emptyMap();
+    map.panels = [{ id: "p", label: "P", port: "stage", from: 1, to: 4 }];
+    setSocketDead(map, "stage", 3, true);
+    expect(panelViews(map)[0].sockets[2]).toMatchObject({ n: 3, dead: true, free: false });
+    applyRow(map, { ch: "1", port: "SLink", socket: "1", upstream: "stage 1" }); // prunes orphans — the dead socket must survive
+    expect(map.nodes.some((n) => n.id === "src:stage:3" && n.dead)).toBe(true);
+    setSocketDead(map, "stage", 3, false);
+    expect(panelViews(map)[0].sockets[2].dead).toBe(false);
+  });
+  it("lists an external insert on the channel a socket feeds", () => {
+    const map = emptyMap();
+    applyRow(map, { ch: "51", name: "vox 1 dup", port: "Dante", socket: "41", upstream: "ULXD4Q-5-8 05" });
+    applyRow(map, { ch: "2", name: "Kick Out", port: "SLink", socket: "7", upstream: "stage 17" });
+    map.nodes.push({ id: "out:dante:32", kind: "output", label: "Dante out 32" }, { id: "dest:waves", kind: "destination", label: "Waves LV1" });
+    map.edges.push({ id: "e1", from: chId("2"), to: "out:dante:32" }, { id: "e2", from: "out:dante:32", to: "dest:waves" });
+    map.panels = [{ id: "p", label: "Back", port: "stage", from: 11, to: 20 }];
+    expect(panelViews(map)[0].sockets[6]).toMatchObject({ n: 17, inserts: ["Waves LV1"] });
+  });
+  it("the example ships with pockets", () => {
+    const v = panelViews(exampleMap());
+    expect(v.map((p) => p.panel.label)).toEqual(["Drum riser pocket", "Keys pocket"]);
+    expect(v[0].live).toBe(7);
   });
 });
