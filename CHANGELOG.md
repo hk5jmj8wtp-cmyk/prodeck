@@ -44,6 +44,21 @@ numbers below are the ones shown in **Settings → Software Update**.
 
 ---
 
+## Unreleased
+
+### Fixed — after an update installed, ProDeck didn't come back
+
+The first in-app update that actually installed (0.9.92 → 0.9.94) ended with
+nothing running: the new copy started while the old one was still on its way
+out, saw a running ProDeck, politely stepped aside and quit — and the old one
+then quit too. Opening ProDeck by hand brought the new version up fine; it just
+shouldn't have needed you to.
+
+The old copy now releases its "I'm running" lock before relaunching, so the new
+one starts as the only instance. Because this fix lives in the copy doing the
+updating, the first update *from* 0.9.94 will still need one manual open; every
+update after that comes back on its own.
+
 ## 0.9.94 — 23 September 2026
 
 ### Fixed — the Mac update that never installed

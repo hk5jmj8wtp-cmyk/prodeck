@@ -123,6 +123,16 @@ fn migrate_legacy_data_dir() {
     }
 }
 
+/// Release the single-instance socket so a relaunch can take over.
+///
+/// Only for the moment before `relaunch()` after an update. Calling it at any
+/// other time simply lets a second copy start, which is the fault the plugin
+/// exists to prevent — so it is not exposed over the web gateway.
+#[tauri::command]
+fn release_single_instance(app: tauri::AppHandle) {
+    tauri_plugin_single_instance::destroy(&app);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     migrate_legacy_data_dir();
@@ -158,6 +168,14 @@ pub fn run() {
     // right answer for the way this happens in practice: someone clicks
     // ProDeck in the Dock, not realising it is already running headless under
     // the watchdog, and now gets the live window instead of a second app.
+    // NOTE on the updater: Tauri's restart() spawns the new binary and then
+    // calls exit(0) — it never runs the run-loop's Exit event, so this plugin's
+    // socket is still bound when the child starts. The child finds a "running"
+    // instance, hands off, and exits 0; then the parent exits 0; launchd sees a
+    // clean exit and, by design, does not relaunch. Result: an update that
+    // installed perfectly and left nothing running — which is exactly what the
+    // first successful in-app update on this channel did. The frontend calls
+    // `release_single_instance` right before relaunch() to close that window.
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             use tauri::Manager;
@@ -295,6 +313,7 @@ pub fn run() {
             lan::diag_local_network,
             lan::open_local_network_settings,
             avantis::avantis_reconnect,
+            release_single_instance,
             obs::obs_reconnect,
             // Audio
             audio::list_audio_inputs,

@@ -8,6 +8,7 @@ import {
 } from "react";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { invoke } from "./lib/tauri";
 import { getVersion } from "@tauri-apps/api/app";
 import { IS_WEB } from "./lib/tauri";
 
@@ -88,6 +89,12 @@ export function UpdaterProvider({ children }: { children: ReactNode }) {
         } else if (ev.event === "Finished") setProgress(100);
       });
       setStatus("ready");
+      // Drop the single-instance lock first. relaunch() spawns the new copy
+      // and exits without running the Exit event that would normally release
+      // it, so the new copy sees us as "already running", defers, and quits —
+      // leaving the freshly installed update not running at all. Seen on the
+      // first real in-app update on this channel.
+      await invoke<void>("release_single_instance").catch(() => {});
       await relaunch();
     } catch (e) {
       setError(String(e));
