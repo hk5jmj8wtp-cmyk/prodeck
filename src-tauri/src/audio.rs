@@ -496,6 +496,11 @@ pub type AudioState = Arc<AudioInner>;
 static IN_FLIGHT: Mutex<Option<(std::time::Instant, &'static str)>> = Mutex::new(None);
 /// When the audio system last failed to answer, for the error text.
 static STALLED_SINCE: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+/// Queries we gave up waiting for that are still running. Each one is a
+/// blocked thread we cannot reclaim; past a handful we stop making more and
+/// fail fast, so a wedged audio system can't drain tokio's blocking pool.
+static ABANDONED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+const MAX_ABANDONED: usize = 4;
 const COREAUDIO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
 
 fn claim(what: &'static str) -> Result<std::time::Instant, &'static str> {
@@ -521,6 +526,13 @@ async fn coreaudio<T: Send + 'static>(
     what: &'static str,
     f: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, String> {
+    use std::sync::atomic::Ordering::SeqCst;
+    let stuck = ABANDONED.load(SeqCst);
+    if stuck >= MAX_ABANDONED {
+        return Err(format!(
+            "{what}: the audio system is not answering ({stuck} calls still stuck). Restart the audio interface (Dante Virtual Soundcard) or ProDeck."
+        ));
+    }
     let job = tokio::task::spawn_blocking(move || {
         // Wait our turn for up to the timeout, then run. A previous query that
         // is past the timeout is abandoned and we go ahead beside it.
@@ -534,6 +546,10 @@ async fn coreaudio<T: Send + 'static>(
         };
         let out = f();
         release(mine);
+        if mine.elapsed() >= COREAUDIO_TIMEOUT {
+            // We were written off; the caller has long since been told no.
+            ABANDONED.fetch_sub(1, SeqCst);
+        }
         *STALLED_SINCE.lock().unwrap_or_else(|p| p.into_inner()) = None;
         Ok(out)
     });
@@ -542,6 +558,7 @@ async fn coreaudio<T: Send + 'static>(
         Ok(Ok(Err(e))) => Err(e),
         Ok(Err(e)) => Err(format!("{what}: audio worker panicked: {e}")),
         Err(_) => {
+            ABANDONED.fetch_add(1, SeqCst);
             let mut st = STALLED_SINCE.lock().unwrap_or_else(|p| p.into_inner());
             let since = st.get_or_insert_with(std::time::Instant::now).elapsed().as_secs();
             eprintln!("[audio] {what}: CoreAudio did not answer within {COREAUDIO_TIMEOUT:?} (stalled {since}s) — abandoning that call");

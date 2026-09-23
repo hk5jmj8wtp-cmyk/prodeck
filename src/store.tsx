@@ -73,6 +73,8 @@ interface Store {
   audioDbC: number;
   audioPeakDb: number;
   audioRunning: boolean;
+  /** Why the meter is not running, when a start attempt was refused. */
+  audioError: string | null;
   lufs: { m: number; s: number; i: number; peak: number } | null;
   splCalibration: number;
   setSplCalibration: (n: number) => void;
@@ -115,6 +117,7 @@ export function ProDeckProvider({ children }: { children: ReactNode }) {
   const [audioDbC, setAudioDbC] = useState(DB_FLOOR);
   const [audioPeakDb, setAudioPeakDb] = useState(DB_FLOOR);
   const [audioRunning, setAudioRunning] = useState(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
   const [lufs, setLufs] = useState<{ m: number; s: number; i: number; peak: number } | null>(
     null,
   );
@@ -280,7 +283,10 @@ export function ProDeckProvider({ children }: { children: ReactNode }) {
       if (typeof m.slowC === "number") setAudioDbC(toDbfs(m.slowC));
       },
     );
-    sub<number>("audio:started", () => setAudioRunning(true));
+    sub<number>("audio:started", () => {
+      setAudioRunning(true);
+      setAudioError(null);
+    });
     sub("audio:stopped", () => {
       lastLevelAt.current = 0;
       setAudioRunning(false);
@@ -347,7 +353,7 @@ export function ProDeckProvider({ children }: { children: ReactNode }) {
       // always live, without anyone clicking Start on the booth Mac. Only the
       // desktop host grabs the device — web/phone clients would just thrash it.
       if (!IS_WEB) {
-        startAudioCapture(s.audio_input ?? null).catch(() => {});
+        startAudioCapture(s.audio_input ?? null).catch((e) => setAudioError(String(e)));
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -366,7 +372,8 @@ export function ProDeckProvider({ children }: { children: ReactNode }) {
       if (audioRunningRef.current) return;
       getSettings()
         .then((s) => startAudioCapture(s.audio_input ?? null))
-        .catch(() => {});
+        .then(() => setAudioError(null))
+        .catch((e) => setAudioError(String(e)));
     }, 30_000);
     return () => clearInterval(iv);
   }, []);
@@ -452,6 +459,7 @@ export function ProDeckProvider({ children }: { children: ReactNode }) {
     audioDbC,
     audioPeakDb,
     audioRunning,
+    audioError,
     lufs,
     splCalibration,
     setSplCalibration,

@@ -78,7 +78,10 @@ Virtual Soundcard does this), the meter's one start attempt hung inside
 macOS's audio system and nothing ever tried again — and every later audio
 question waited politely behind the hung one. Now a query that overruns is
 abandoned rather than waited on, the meter retries every 30 seconds until it
-is running, and the error text says what is going on.
+is running, and the Audio light says **not answering — retrying** instead of
+**off** while that is happening. If the audio system stays wedged, the fix is
+outside ProDeck: restart the audio interface's software (Dante Virtual
+Soundcard) or the Mac's audio service.
 
 ### New — Routing → Map draws it
 

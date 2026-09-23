@@ -245,6 +245,12 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
       // Audio: silence + sustained over-SPL.
       let audioState: HealthState = "idle";
       let audioDetail = "off";
+      if (!p.audioRunning && p.audioError) {
+        // The meter tried and the audio system refused or never answered.
+        // "off" looked like a choice; this is a fault someone can act on.
+        audioState = "warn";
+        audioDetail = "not answering — retrying";
+      }
       if (p.audioRunning) {
         const level = p.audioLevel;
         // "Dead feed" detection uses PEAK, not RMS: real program material dips
