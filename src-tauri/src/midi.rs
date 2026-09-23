@@ -153,3 +153,37 @@ pub fn disconnect_midi(state: tauri::State<'_, MidiState>, app: AppHandle) {
     *state.0.lock().unwrap_or_else(|p| p.into_inner()) = None;
     app.emit("midi:disconnected", ()).ok();
 }
+
+// ---- Song Key → rig: shared state + request relay -------------------------
+//
+// The key-send loop runs in the booth's frontend (it owns the MIDI/OSC
+// connections). Phones and the ProPresenter page need to SEE what was sent
+// and, with Control, ASK for a key. So the booth publishes its state here
+// (emitted as keysend:state, forwarded to web) and a web request becomes a
+// keysend:request event the booth frontend acts on through its own loop.
+
+pub struct KeySendState(pub Mutex<serde_json::Value>);
+
+#[tauri::command]
+pub fn keysend_set_state(state: serde_json::Value, st: tauri::State<'_, KeySendState>, app: tauri::AppHandle) {
+    *st.0.lock().unwrap_or_else(|p| p.into_inner()) = state.clone();
+    use tauri::Emitter;
+    app.emit("keysend:state", state).ok();
+}
+
+#[tauri::command]
+pub fn keysend_state(st: tauri::State<'_, KeySendState>) -> serde_json::Value {
+    st.0.lock().unwrap_or_else(|p| p.into_inner()).clone()
+}
+
+/// A key someone asked for (a key name like "G", or "off" for the tune-off
+/// scene). The booth frontend hears keysend:request and sends it.
+pub fn keysend_request_core(app: &tauri::AppHandle, key: &str, who: &str) {
+    use tauri::Emitter;
+    app.emit("keysend:request", serde_json::json!({ "key": key, "who": who })).ok();
+}
+
+#[tauri::command]
+pub fn keysend_request(key: String, app: tauri::AppHandle) {
+    keysend_request_core(&app, &key, "booth");
+}

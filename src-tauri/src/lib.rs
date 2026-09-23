@@ -266,6 +266,7 @@ pub fn run() {
             as transcription::TranscriptionState)
         .manage(midi::MidiState::new())
         .manage(midi::MidiOutState::new())
+        .manage(midi::KeySendState(std::sync::Mutex::new(serde_json::Value::Null)))
         .manage(Arc::new(osc::OscInner::new()) as osc::OscState)
         .manage(Arc::new(pco::PcoInner::new()) as pco::PcoState)
         .manage(Arc::new(web::WebInner::new()) as web::WebState)
@@ -403,6 +404,9 @@ pub fn run() {
             midi::connect_midi_out,
             midi::disconnect_midi_out,
             midi::midi_send_key,
+            midi::keysend_set_state,
+            midi::keysend_state,
+            midi::keysend_request,
             // OSC
             osc::start_osc,
             osc::stop_osc,

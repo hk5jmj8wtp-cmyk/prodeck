@@ -8,7 +8,10 @@ import {
   disconnectMidiOut,
   midiSendKey,
   oscSendKey,
+  keysendSetState,
+  on,
   IS_WEB,
+  type KeySendState,
   type Settings,
 } from "./tauri";
 
@@ -30,14 +33,27 @@ export function keyToPitchClass(name: string | null | undefined): number | null 
 
 export const pitchClassName = (pc: number) => PC_NAMES[((pc % 12) + 12) % 12];
 
+/** Program number a key name becomes: 0–11 for a key, 12 for "off" — the
+ *  rig's thirteenth scene (TUNE OFF on an LV1 whose scenes are C…B, TUNE OFF). */
+export const TUNE_OFF_PROGRAM = 12;
+export const isTuneOff = (key: string | null | undefined) => !!key && /^(off|tune\s*off|none)$/i.test(key.trim());
+export function keyToProgram(key: string | null | undefined): number | null {
+  if (isTuneOff(key)) return TUNE_OFF_PROGRAM;
+  return keyToPitchClass(key);
+}
+export const programName = (p: number) => (p === TUNE_OFF_PROGRAM ? "Tune off" : pitchClassName(p));
+
+/** The twelve keys plus Tune off, in the order the rig's scenes run. */
+export const KEY_CHOICES = [...PC_NAMES, "off"];
+
 // Push a key out to the rig per the saved config (OSC + MIDI PC/CC). Used by the
 // live auto-send and the Settings "test" button.
 export async function sendKey(s: Settings, key: string, midiConnected: boolean) {
-  const pc = keyToPitchClass(key);
+  const pc = keyToProgram(key);
   if (pc == null) return;
   const tasks: Promise<unknown>[] = [];
   if (s.keysend_osc_host)
-    tasks.push(oscSendKey(s.keysend_osc_host, s.keysend_osc_port, key || pitchClassName(pc), pc));
+    tasks.push(oscSendKey(s.keysend_osc_host, s.keysend_osc_port, isTuneOff(key) ? "off" : key || pitchClassName(pc), pc));
   if (midiConnected) tasks.push(midiSendKey(s.keysend_midi_channel, pc, s.keysend_cc));
   await Promise.allSettled(tasks);
 }
@@ -50,7 +66,33 @@ export function useKeySend() {
   const cfgRef = useRef<Settings | null>(null);
   const connectedPort = useRef<string | null>(null);
   const lastSent = useRef<number | null>(null);
+  const last = useRef<{ key: string | null; program: number | null; at: number | null; by: string | null }>({ key: null, program: null, at: null, by: null });
+  const liveRef = useRef<{ song: string | null; key: string | null }>({ song: null, key: null });
   const [ver, setVer] = useState(0);
+
+  // Everyone else — the ProPresenter page, the Key widget, phones — reads
+  // this. Published on every change; the booth is the only writer.
+  const publish = () => {
+    if (IS_WEB) return;
+    const cfg = cfgRef.current;
+    const st: KeySendState = {
+      enabled: !!cfg?.keysend_enabled,
+      midiPort: cfg?.keysend_midi_port ?? null,
+      midiConnected: !!connectedPort.current,
+      oscHost: cfg?.keysend_osc_host ?? "",
+      liveSong: liveRef.current.song,
+      liveKey: liveRef.current.key,
+      lastKey: last.current.key,
+      lastProgram: last.current.program,
+      lastAt: last.current.at,
+      lastBy: last.current.by,
+    };
+    keysendSetState(st).catch(() => {});
+  };
+  const record = (key: string, by: string) => {
+    last.current = { key, program: keyToProgram(key), at: Date.now(), by };
+    publish();
+  };
 
   // (Re)load config and bring the MIDI-out connection in line with it.
   async function reload() {
@@ -71,6 +113,7 @@ export function useKeySend() {
     }
     lastSent.current = null; // resend the current key under the new config
     setVer((v) => v + 1);
+    publish();
   }
 
   useEffect(() => {
@@ -79,12 +122,11 @@ export function useKeySend() {
     // Manual one-shot send (the Key Change dashboard widget). Pushes a key to the
     // rig right now, reusing this hook's config + open MIDI connection. Always
     // sends — even the same key again — so it doubles as a "re-send" button.
-    const onSend = (e: Event) => {
+    const manual = (key: string | undefined, by: string) => {
       if (IS_WEB) return;
       const cfg = cfgRef.current;
-      const key = (e as CustomEvent).detail?.key as string | undefined;
       if (!cfg || !cfg.keysend_enabled || !key) return;
-      const pc = keyToPitchClass(key);
+      const pc = keyToProgram(key);
       if (pc == null) return;
       // Prime the dedupe only when something can actually leave the machine —
       // otherwise a tap with the rig offline marked the pc as "sent" and the
@@ -92,12 +134,17 @@ export function useKeySend() {
       if (!cfg.keysend_osc_host && !connectedPort.current) return;
       lastSent.current = pc; // keep the live-key effect from re-firing the same pc
       sendKey(cfg, key, !!connectedPort.current);
+      record(key, by);
     };
+    const onSend = (e: Event) => manual((e as CustomEvent).detail?.key as string | undefined, "booth");
+    // A phone or another browser asked, through the gateway (Control perm).
+    const unReq = on<{ key?: string; who?: string }>("keysend:request", (r) => manual(r?.key, r?.who || "browser"));
     window.addEventListener("prodeck:keysend", onChange);
     window.addEventListener("prodeck:sendkey", onSend as EventListener);
     return () => {
       window.removeEventListener("prodeck:keysend", onChange);
       window.removeEventListener("prodeck:sendkey", onSend as EventListener);
+      unReq.then((f) => f());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -123,6 +170,11 @@ export function useKeySend() {
   const liveSongId = followedId ?? liveItemId;
   const liveItem = items.find((i) => i.id === liveSongId) ?? null;
   const liveKey = liveItem && liveItem.type === "song" ? liveItem.key : "";
+  useEffect(() => {
+    liveRef.current = { song: liveItem && liveItem.type === "song" ? liveItem.title : null, key: liveKey || null };
+    publish();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveItem?.id, liveKey]);
 
   // The rig often boots AFTER ProDeck (its network-MIDI port appears late), and
   // one failed connect used to leave key-sends silently OSC-only until someone
@@ -139,6 +191,7 @@ export function useKeySend() {
           connectedPort.current = want;
           lastSent.current = null;
           setVer((v) => v + 1);
+          publish();
         })
         .catch(() => {});
     }, 15000);
@@ -153,5 +206,6 @@ export function useKeySend() {
     if (pc == null || lastSent.current === pc) return;
     lastSent.current = pc;
     sendKey(cfg, liveKey, !!connectedPort.current);
+    record(liveKey, "auto");
   }, [liveKey, ver]);
 }

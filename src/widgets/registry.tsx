@@ -66,6 +66,7 @@ import { useAlerts } from "../alertsStore";
 import { useRelay } from "../relayStore";
 import { Avatar, MicCard } from "../components/PcoBits";
 import { SongKeyLeader } from "../components/SongKeyLeader";
+import { KeyStrip } from "../components/KeyStrip";
 import { askConfirm, askText } from "../lib/dialogs";
 import { listenSnapshot, onListen, startListen, stopListen } from "../lib/listen";
 import { Icon } from "../components/Icon";
@@ -3066,6 +3067,14 @@ function StageCallWidget({ widget, update, editing }: WidgetProps) {
   );
 }
 
+function KeyChangeWidget() {
+  return (
+    <div className="w-keychange">
+      <KeyStrip />
+    </div>
+  );
+}
+
 export const WIDGETS: WidgetDef[] = [
   // Mission Control — director overview
   { type: "health_strip", label: "System Health", group: "Mission Control", w: 12, h: 2, component: HealthStripWidget },
@@ -3092,6 +3101,7 @@ export const WIDGETS: WidgetDef[] = [
   { type: "audio_meter", label: "SPL + RTA", group: "Audio", w: 5, h: 5, component: AudioMeterWidget },
   { type: "listen", label: "Overflow Listen", group: "Audio", w: 3, h: 3, component: ListenWidget },
   { type: "avantis", label: "Sound Desk (Avantis)", group: "Audio", w: 6, h: 4, component: AvantisWidget },
+  { type: "key_change", label: "Song Key → Waves", group: "Audio", w: 6, h: 2, component: KeyChangeWidget },
   { type: "readiness", label: "Sunday Readiness", group: "General", w: 4, h: 4, component: ReadinessWidget },
   // Video & Switcher
   { type: "obs", label: "OBS — Live & Scene", group: "Video", w: 4, h: 3, component: ObsWidget },

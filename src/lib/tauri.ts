@@ -634,6 +634,26 @@ export const connectMidiOut = (portName: string) =>
 export const disconnectMidiOut = () => invoke<void>("disconnect_midi_out");
 export const midiSendKey = (channel: number, value: number, ccNum: number) =>
   invoke<void>("midi_send_key", { channel, value, ccNum });
+
+/** What the booth's key-send loop last did — published for every screen. */
+export interface KeySendState {
+  enabled: boolean;
+  midiPort: string | null;
+  midiConnected: boolean;
+  oscHost: string;
+  /** The live song and its effective key, as the loop sees them. */
+  liveSong: string | null;
+  liveKey: string | null;
+  /** Last key actually sent ("G", "off"), its program number, and when. */
+  lastKey: string | null;
+  lastProgram: number | null;
+  lastAt: number | null;
+  lastBy: string | null;
+}
+export const keysendState = () => invoke<KeySendState | null>("keysend_state");
+export const keysendSetState = (state: KeySendState) => invoke<void>("keysend_set_state", { state });
+/** Ask the booth to send a key now (Control on the web). */
+export const keysendRequest = (key: string) => invoke<void>("keysend_request", { key });
 export const oscSendKey = (host: string, port: number, name: string, pc: number) =>
   invoke<void>("osc_send_key", { host, port, name, pc });
 

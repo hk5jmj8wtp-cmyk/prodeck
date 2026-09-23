@@ -753,6 +753,23 @@ To change the map, press **Edit** first:
     related: ["routing-map", "routing-walk"],
   },
   {
+    id: "song-key-waves",
+    group: "Sound console",
+    title: "Song key → Waves: what was sent, and sending one by hand",
+    aliases: ["waves key", "key change", "tune off", "send key to waves", "wrong key on the vocals", "auto-tune key", "song key to rig"],
+    body: `When a song goes live, ProDeck sends its key (from Planning Center, or your in-app override) to the Waves rig as a scene number — C is scene 1 … B is scene 12, and **Tune off** is scene 13. The rig's vocal tuning follows.
+
+You can see and steer this in three places:
+- The **ProPresenter** page shows a strip under the transport: the key last sent (green when it matches the live song, amber when the rig is on something else), the live song's key, the MIDI link, and thirteen buttons.
+- The **Song Key → Waves** dashboard tile is the same strip, for the booth or a phone.
+- Any phone with **Control** can press a key too; the booth does the sending.
+
+Press a key to send it now — a re-send of the same key is fine. **Tune off** when a speaker or a spoken piece shouldn't be tuned. If the strip says **no link**, the rtpMIDI session isn't connected: on the Waves PC check rtpMIDI shows this Mac's session connected, and remember the rig only sees MIDI ports that existed when LV1 started.
+
+Setup lives in **Settings → Song Key**: the MIDI output (your Network MIDI session) and channel.`,
+    related: ["console", "ask-prodeck"],
+  },
+  {
     id: "ask-prodeck",
     group: "Troubleshooting",
     title: "Ask ProDeck when something is wrong",

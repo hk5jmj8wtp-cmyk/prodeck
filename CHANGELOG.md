@@ -71,6 +71,16 @@ Maps saved by the old Routing page are converted on first open with every
 step kept, and nothing is written until you press Save. Until you paste your
 own list, the page shows a clearly-labelled sixteen-channel example.
 
+### New — the Waves key, back on screen
+
+The key ProDeck sends to the Waves rig when a song goes live is visible
+again: under the transport on the **ProPresenter** page, and as a **Song Key →
+Waves** dashboard tile. Both show the key last sent (green when it matches
+the live song, amber when the rig is on something else), the live song's key,
+whether the MIDI link is up, and thirteen buttons — the twelve keys and
+**Tune off** — to send one by hand. Phones with Control can press them too;
+the booth does the sending and everyone sees the result.
+
 ### Fixed — a mute ProDeck only remembered could show as fact
 
 The Avantis can't be asked whether a channel is muted; ProDeck learns a mute

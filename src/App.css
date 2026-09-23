@@ -9186,3 +9186,97 @@ select.input {
   border-style: dashed;
   opacity: 0.78;
 }
+
+/* ---------------------------------------------------------------------
+   Song Key → Waves strip. Sent key big; live song's key beside it; thirteen
+   buttons. The sent key is green when it matches the live song, amber when
+   the rig is on something else. */
+.ks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ks-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.ks-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--muted);
+}
+.ks-sent {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  min-width: 2ch;
+}
+.ks-sent.ok {
+  color: var(--good);
+}
+.ks-sent.warn {
+  color: var(--warn);
+}
+.ks-sent.none {
+  color: var(--muted);
+}
+.ks-live {
+  font-size: 12px;
+}
+.ks-keys {
+  display: grid;
+  grid-template-columns: repeat(13, minmax(0, 1fr));
+  gap: 4px;
+}
+.ks-key {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 0;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.ks-key:hover {
+  border-color: var(--accent-line);
+}
+.ks-key.live {
+  border-color: var(--accent);
+}
+.ks-key.sent {
+  background: var(--good-soft);
+  border-color: var(--good);
+}
+.ks-key.off {
+  color: var(--muted);
+}
+.ks-key.off.sent {
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-color: var(--warn);
+}
+.ks-err {
+  font-size: 12px;
+  color: var(--warn);
+}
+.ks.compact {
+  gap: 6px;
+  padding: 6px 0 2px;
+}
+.ks.compact .ks-sent {
+  font-size: 16px;
+}
+.ks.compact .ks-key {
+  font-size: 11px;
+  padding: 5px 0;
+}
+@media (max-width: 760px) {
+  .ks-keys {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+}

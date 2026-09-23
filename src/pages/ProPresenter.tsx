@@ -19,6 +19,7 @@ import {
 import { currentTimers } from "../lib/status";
 import { usePco } from "../pcoStore";
 import { SongKeyLeader } from "../components/SongKeyLeader";
+import { KeyStrip } from "../components/KeyStrip";
 
 interface Item {
   uuid: string;
@@ -177,6 +178,7 @@ export function ProPresenterPage() {
               <SongKeyLeader item={transportSong} />
             </div>
           )}
+          <KeyStrip compact />
           {looks.length > 0 && (
             <label className="transport-look">
               <span>Look</span>

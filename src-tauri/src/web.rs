@@ -61,6 +61,7 @@ const FORWARD_EVENTS: &[&str] = &[
     "tap:error",
     "checklist:changed",
     "routing:changed",
+    "keysend:state",
     "chat:confidence_clear",
     "identity:changed",
 ];
@@ -1294,6 +1295,7 @@ pub(crate) fn member_cmd_ok(cmd: &str) -> bool {
             // status carries no secret, and asking is gated on the setting in
             // dispatch (assist_complete is handled there).
             | "load_knowledge" | "assist_status" | "assist_complete"
+            | "keysend_state"
             | "tap_edge_state" | "tap_stats" | "tap_stats_range"
             // Role channels: members must see which channels exist. Roles
             // only — the roster (names, ids) stays admin-tier.
@@ -1351,7 +1353,7 @@ pub(crate) fn perm_for_cmd(cmd: &str) -> Option<&'static str> {
         | "pp_trigger_look" | "pp_trigger_macro" | "pp_trigger_next" | "pp_trigger_previous"
         | "avantis_set_mute" | "avantis_set_fader" | "avantis_set_name" | "avantis_recall_scene"
         | "avantis_reconnect" | "obs_reconnect"
-        | "obs_set_scene" | "pco_live_action" | "midi_send_key" | "osc_send_key" => Some("control"),
+        | "obs_set_scene" | "pco_live_action" | "midi_send_key" | "osc_send_key" | "keysend_request" => Some("control"),
         "tap_override" => Some("tap"),
         "identity_list" | "identity_approve" | "identity_remove" | "identity_set_role"
         | "identity_update_profile" | "invite_create" | "invite_list" | "invite_revoke"
@@ -1992,6 +1994,13 @@ async fn dispatch(
         }
         // Manual key send from a phone (Key Change widget) — goes out the HOST's
         // already-connected MIDI output, so the booth rig hears it.
+        "keysend_state" => Ok(app.state::<crate::midi::KeySendState>().0.lock().unwrap_or_else(|p| p.into_inner()).clone()),
+        "keysend_request" => {
+            let key = s("key").unwrap_or_default();
+            let who = caller.as_ref().map(|c| c.name.clone()).unwrap_or_else(|| "browser".into());
+            crate::midi::keysend_request_core(&app, &key, &who);
+            Ok(Value::Null)
+        }
         "midi_send_key" => {
             let channel = args.get("channel").and_then(|x| x.as_u64()).unwrap_or(1) as u8;
             let value = args.get("value").and_then(|x| x.as_u64()).unwrap_or(0) as u8;
