@@ -35,7 +35,7 @@ numbers below are the ones shown in **Settings → Software Update**.
 
 ---
 
-## Unreleased
+## 0.9.93 — 23 September 2026
 
 ### Every connection now has a Reconnect / Disconnect
 
