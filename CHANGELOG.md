@@ -37,6 +37,28 @@ numbers below are the ones shown in **Settings → Software Update**.
 
 ## Unreleased
 
+### Every connection now has a Reconnect / Disconnect
+
+**Settings → Connections** lists ProPresenter, Planning Center, the sound console,
+OBS, the stage feed and browser access on one card, each with a button to drop
+and redial just that link. Everything reconnects on its own when a link falls
+over; this is for the case it can't see — a connection that says it's fine and
+isn't, a desk or OBS rebooted behind it, ProPresenter moved to a new address.
+Until now the only fix was quitting ProDeck, mid-service, with everything else
+on it.
+
+### Planning Center sign-in: the token route is visible again
+
+If you were looking for where to type an Application ID and Secret and found only
+a Connect button, that was our doing: the token fields were folded behind a
+one-line link that was easy to miss. They're now a plain second choice under the
+Connect button. And after you press Connect, the page now says what to do next:
+finish signing in **in the browser tab that opened** — including any login code
+Planning Center emails or texts you. Nothing is typed into ProDeck.
+
+A church already connected with a token also gets a **Disconnect** on the
+Planning Center page, which is how you get back to the sign-in.
+
 ### Fixed — ProPresenter still appeared to drop out, this time for a different reason
 
 The previous fix replaced "listen for silence" with "ask ProPresenter every few

@@ -367,6 +367,11 @@ export interface Ga4Snapshot {
 /** Live viewer count for the Church Online watch page, from GA4 realtime. */
 export const ga4State = () => invoke<Ga4Snapshot>("ga4_state");
 export const avantisState = () => invoke<AvantisSnapshot>("avantis_state");
+/** Drop the desk link and dial again with current settings; the mirror
+ *  reports the result on avantis:status within ~2 s. */
+export const avantisReconnect = () => invoke<void>("avantis_reconnect");
+/** Close the OBS WebSocket and reconnect; obs:state reports the outcome. */
+export const obsReconnect = () => invoke<void>("obs_reconnect");
 // Desk control — admin tier only (member web clients are rejected server-side).
 export const avantisSetMute = (id: string, muted: boolean) =>
   invoke<void>("avantis_set_mute", { id, muted });

@@ -167,8 +167,11 @@ export function PcoConnect({
           </button>
           {waiting && (
             <p className="hint">
-              A Planning Center tab should have opened. Finish there and this page
-              will catch up on its own.
+              A Planning Center tab has opened in your browser. <strong>Finish
+              signing in there</strong> — including any login code Planning Center
+              emails or texts you; that goes in the browser, not here. Once you
+              approve ProDeck, this page fills in on its own. Nothing is typed into
+              ProDeck.
             </p>
           )}
         </>
@@ -184,15 +187,24 @@ export function PcoConnect({
 
       {msg && <p className={msg === "Checking…" ? "hint" : "error"}>{msg}</p>}
 
-      {!st?.connected && (
-        <details className="pco-token-fallback" open={showToken} onToggle={(e) => setShowToken((e.target as HTMLDetailsElement).open)}>
-          <summary>Use a Personal Access Token instead</summary>
+      {!st?.connected && !showToken && (
+        <div className="pco-token-fallback">
+          <p className="hint" style={{ marginBottom: 6 }}>
+            Have an <strong>Application ID and Secret</strong> from Planning Center's
+            developer page instead?
+          </p>
+          <button className="btn" onClick={() => setShowToken(true)}>
+            Use a Personal Access Token
+          </button>
+        </div>
+      )}
+      {!st?.connected && showToken && (
+        <div className="pco-token-fallback pco-token-open">
           <p className="hint">
-            The older way in, and still fine: at{" "}
-            <code>api.planningcenteronline.com</code> → Developers → Personal
-            Access Tokens, create one and paste both halves. Note that a token
-            carries that person's full Planning Center access and doesn't expire,
-            so signing in above is the safer option where it's available.
+            Paste both halves from <code>api.planningcenteronline.com</code> →
+            Developers → Personal Access Tokens. A token carries that person's full
+            Planning Center access and never expires, so signing in above is the
+            safer option where you have it.
           </p>
           <label className="field">
             <span>Application ID</span>
@@ -202,10 +214,15 @@ export function PcoConnect({
             <span>Secret</span>
             <input className="input" type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} />
           </label>
-          <button className="btn" disabled={busy || !appId.trim() || !secret.trim()} onClick={saveToken}>
-            Save token
-          </button>
-        </details>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn primary" disabled={busy || !appId.trim() || !secret.trim()} onClick={saveToken}>
+              Save token
+            </button>
+            <button className="btn ghost" onClick={() => setShowToken(false)}>
+              Back to sign-in
+            </button>
+          </div>
+        </div>
       )}
     </>
   );

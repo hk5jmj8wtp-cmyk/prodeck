@@ -674,6 +674,17 @@ fn fire_softkeys(
     }
 }
 
+/// Set by `avantis_reconnect`; the mirror loop clears it as it drops the link.
+static RECONNECT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Drop the desk connection and dial again with current settings. Returns at
+/// once; the mirror notices within two seconds and `avantis:status` reports the
+/// result the same way it always has.
+#[tauri::command]
+pub fn avantis_reconnect() {
+    RECONNECT.store(true, std::sync::atomic::Ordering::Release);
+}
+
 pub fn spawn_mirror(app: AppHandle) {
     std::thread::spawn(move || {
         let state: AvantisState = app.state::<AvantisState>().inner().clone();
@@ -770,6 +781,14 @@ pub fn spawn_mirror(app: AppHandle) {
                 }
                 if last_cfg_check.elapsed() >= Duration::from_secs(2) {
                     last_cfg_check = Instant::now();
+                    // An operator asked for a fresh connection. The loop already
+                    // redials on its own when the desk drops; this covers the
+                    // case it can't see — a socket that is open and dead, the
+                    // desk rebooted behind it, a mirror that has drifted — where
+                    // the only remedy used to be restarting ProDeck mid-service.
+                    if RECONNECT.swap(false, std::sync::atomic::Ordering::AcqRel) {
+                        break;
+                    }
                     let now = settings_tuple(&app);
                     if now != (enabled, host.clone(), base, model, port) {
                         break; // settings changed — reconnect with new config

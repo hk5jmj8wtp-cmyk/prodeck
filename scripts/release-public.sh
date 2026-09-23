@@ -176,6 +176,8 @@ if [ -n "$WIN_EXE" ]; then
 ## Windows
 Download **$(basename "$WIN_EXE")** and run it. It installs for the current user only, so there's no admin prompt. Installed copies update themselves from this release automatically.
 
+**First run only:** Windows SmartScreen will say *Windows protected your PC*, because the installer isn't yet signed with a Microsoft-recognised certificate. Click **More info → Run anyway**. That is the error, not a fault in the download.
+
 Windows build and packaging by [@jpeters0](https://github.com/jpeters0)."
 fi
 

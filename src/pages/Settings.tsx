@@ -68,6 +68,10 @@ import {
   ndiDiscover,
   type NdiSource,
   type KeepaliveStatus,
+  avantisReconnect,
+  obsReconnect,
+  ndiStop,
+  pcoOauthDisconnect,
 } from "../lib/tauri";
 import { relaunch } from "@tauri-apps/plugin-process";
 import lockupHorizontal from "../assets/prodeck-lockup-horizontal-color.svg";
@@ -78,11 +82,18 @@ import { useSchedules } from "../scheduleStore";
 import { usePco , isDeclined } from "../pcoStore";
 
 export function SettingsPage() {
-  const { settings, refreshSettings, midiLog, oscLog } = useProDeck();
+  const { settings, refreshSettings, midiLog, oscLog, connected: ppUp, host: ppHost, connect: ppConnect, disconnect: ppDisconnect } = useProDeck();
   // Mic numbers come from the Planning Center page's own count, so the list
   // below uses the same numbering as the mic assignments and the desk map.
-  const { micCount } = usePco();
-  const { config: alertCfg, setConfig: setAlertCfg } = useAlerts();
+  const { micCount, saveCredentials: pcoSaveCredentials } = usePco();
+  const { config: alertCfg, setConfig: setAlertCfg, subsystems: health } = useAlerts();
+  // OBS isn't on the health strip; listen for its own state for the row below.
+  const [obsUp, setObsUp] = useState<boolean | null>(null);
+  useEffect(() => {
+    obsState().then((o) => setObsUp(!!o.connected)).catch(() => {});
+    const un = on<{ connected: boolean }>("obs:state", (o) => setObsUp(!!o.connected));
+    return () => void un.then((f) => f());
+  }, []);
   const relay = useRelay();
   const upd = useUpdater();
   const [form, setForm] = useState<Settings | null>(null);
@@ -421,6 +432,78 @@ export function SettingsPage() {
           is ready. Updates are signed releases from the ProDeck GitHub repository (or your
           own fork's feed, if you build it yourself); installing restarts the app.
         </p>
+      </section>
+
+      <section className="card">
+        {/* Connections — one place to drop and redial anything, without
+            restarting ProDeck. Every integration reconnects on its own when a
+            link falls over; this is for the case it can't see: a socket that is
+            open and dead, a desk or OBS rebooted behind it, a mirror that has
+            drifted, ProPresenter moved to a new address. Until this existed the
+            remedy was "quit ProDeck", mid-service, with everything else on it. */}
+        <div className="card-head"><h3 id="set-connections">Connections</h3><HelpLink section="care" /></div>
+        <p className="muted small">
+          Each line reconnects on its own when it drops. Use these when something says it's
+          connected but isn't behaving — they reconnect the one thing, and leave the rest alone.
+        </p>
+        <ul className="conn-list">
+          {(() => {
+            const st = (k: string) => health.find((h) => h.key === k)?.state ?? "idle";
+            const Dot = ({ s }: { s: string }) => <span className={`dot ${s === "ok" ? "online" : s === "bad" ? "offline" : ""}`} />;
+            return (
+              <>
+                <li>
+                  <Dot s={ppUp ? "ok" : "bad"} /><span className="conn-name">ProPresenter</span>
+                  <span className="muted small conn-detail">{ppUp ? ppHost : "not connected"}</span>
+                  <span className="conn-actions">
+                    <button className="btn small" onClick={() => ppConnect(form.pp_host, form.pp_port).catch(() => {})}>Reconnect</button>
+                    {ppUp && <button className="btn small ghost" onClick={() => ppDisconnect()}>Disconnect</button>}
+                  </span>
+                </li>
+                <li>
+                  <Dot s={st("pco")} /><span className="conn-name">Planning Center</span>
+                  <span className="muted small conn-detail">{health.find((h) => h.key === "pco")?.detail ?? ""}</span>
+                  <span className="conn-actions">
+                    <button className="btn small ghost" title="Forget the saved credentials so you can sign in again"
+                      onClick={async () => {
+                        if (!(await askConfirm("Disconnect Planning Center? You can sign in again straight away — plans and mic assignments are kept."))) return;
+                        await pcoOauthDisconnect().catch(() => {});
+                        await pcoSaveCredentials("", "");
+                      }}>Disconnect</button>
+                  </span>
+                </li>
+                <li>
+                  <Dot s={st("desk")} /><span className="conn-name">Sound console</span>
+                  <span className="muted small conn-detail">{health.find((h) => h.key === "desk")?.detail ?? ""}</span>
+                  <span className="conn-actions">
+                    <button className="btn small" onClick={() => avantisReconnect()}>Reconnect</button>
+                  </span>
+                </li>
+                <li>
+                  <Dot s={obsUp === null ? "idle" : obsUp ? "ok" : "bad"} /><span className="conn-name">OBS Studio</span>
+                  <span className="muted small conn-detail">{obsUp === null ? "" : obsUp ? "connected" : "not connected"}</span>
+                  <span className="conn-actions">
+                    <button className="btn small" onClick={() => obsReconnect()}>Reconnect</button>
+                  </span>
+                </li>
+                <li>
+                  <Dot s={st("cam")} /><span className="conn-name">Stage feed (NDI)</span>
+                  <span className="muted small conn-detail">{health.find((h) => h.key === "cam")?.detail ?? ""}</span>
+                  <span className="conn-actions">
+                    <button className="btn small ghost" title="Stop the receiver; widgets that need it start it again" onClick={() => ndiStop()}>Disconnect</button>
+                  </span>
+                </li>
+                <li>
+                  <Dot s={form.web_enabled ? "ok" : "idle"} /><span className="conn-name">Browser access (phones &amp; kiosks)</span>
+                  <span className="muted small conn-detail">{form.web_enabled ? `port ${form.web_port}` : "off"}</span>
+                  <span className="conn-actions">
+                    <button className="btn small" onClick={async () => { await webStop().catch(() => {}); await webStart(form.web_port).catch(() => {}); }}>Restart</button>
+                  </span>
+                </li>
+              </>
+            );
+          })()}
+        </ul>
       </section>
 
       <section className="card">

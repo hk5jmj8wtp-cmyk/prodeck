@@ -59,6 +59,20 @@ export function PlanningCenter() {
       <header className="page-head pco-head">
         <h1>Planning Center</h1>
         {pco.me && <span className="chip online">{pco.me}</span>}
+        {/* A church that connected with a pasted token has no other way to reach
+            Connect — the sign-in card only shows when nothing is configured.
+            Clearing the token is what gets them there. */}
+        <button
+          className="btn ghost small"
+          title="Forget the saved Planning Center credentials and connect again"
+          onClick={async () => {
+            if (await askConfirm("Disconnect Planning Center? You can sign in again straight away — plans and mic assignments are kept.")) {
+              await pco.saveCredentials("", "");
+            }
+          }}
+        >
+          Disconnect
+        </button>
         <div className="pco-controls">
           <select
             className="input"

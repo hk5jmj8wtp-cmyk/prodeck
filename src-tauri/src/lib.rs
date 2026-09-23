@@ -294,6 +294,8 @@ pub fn run() {
             pcoauth::pco_oauth_disconnect,
             lan::diag_local_network,
             lan::open_local_network_settings,
+            avantis::avantis_reconnect,
+            obs::obs_reconnect,
             // Audio
             audio::list_audio_inputs,
             audio::default_audio_input,

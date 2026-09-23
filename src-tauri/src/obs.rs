@@ -183,6 +183,16 @@ fn friendly(e: &str) -> String {
     }
 }
 
+/// Set by `obs_reconnect`; the client loop clears it as it drops the socket.
+static RECONNECT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Close the OBS WebSocket and reconnect with current settings. The loop picks
+/// this up on its next tick; `obs:state` reports the outcome.
+#[tauri::command]
+pub fn obs_reconnect() {
+    RECONNECT.store(true, std::sync::atomic::Ordering::Release);
+}
+
 pub fn spawn_client(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let state: ObsState = app.state::<ObsState>().inner().clone();
@@ -257,6 +267,9 @@ async fn run_session(
                 }
             }
             _ = cfg_check.tick() => {
+                if RECONNECT.swap(false, std::sync::atomic::Ordering::AcqRel) {
+                    return Ok(()); // operator asked for a fresh connection
+                }
                 let now = settings(app);
                 if (now.0, now.1, now.2) != cfg {
                     return Ok(()); // settings changed — reconnect with them

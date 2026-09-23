@@ -1345,6 +1345,7 @@ pub(crate) fn perm_for_cmd(cmd: &str) -> Option<&'static str> {
         "pp_action" | "pp_clear_layer" | "pp_put" | "pp_delete" | "pp_timer_op"
         | "pp_trigger_look" | "pp_trigger_macro" | "pp_trigger_next" | "pp_trigger_previous"
         | "avantis_set_mute" | "avantis_set_fader" | "avantis_set_name" | "avantis_recall_scene"
+        | "avantis_reconnect" | "obs_reconnect"
         | "obs_set_scene" | "pco_live_action" | "midi_send_key" | "osc_send_key" => Some("control"),
         "tap_override" => Some("tap"),
         "identity_list" | "identity_approve" | "identity_remove" | "identity_set_role"
@@ -1617,6 +1618,14 @@ async fn dispatch(
         }
         // Scene changes reach here only on the admin tier — this changes what
         // the world sees, same policy as ProPresenter control.
+        "avantis_reconnect" => {
+            crate::avantis::avantis_reconnect();
+            Ok(Value::Null)
+        }
+        "obs_reconnect" => {
+            crate::obs::obs_reconnect();
+            Ok(Value::Null)
+        }
         "obs_set_scene" => {
             let scene = args.get("scene").and_then(|v| v.as_str()).unwrap_or("").to_string();
             crate::obs::obs_set_scene(scene, app.clone()).await?;
