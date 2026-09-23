@@ -13,7 +13,16 @@ Apple in macOS Sequoia.)
 **Updating:** ProDeck checks a few seconds after launch and shows a banner with
 the release notes and an **Install & Restart** button.
 
-> ### If updates aren't working, download it again
+> ### Mac: updating never worked before 0.9.94 — and now it does, without redownloading
+>
+> Every Mac update from 0.9.67 through 0.9.93 failed with *"failed to unpack
+> `._ProDeck.app`"* the moment you pressed Install & Restart. The app was
+> fine; the update file we published carried macOS metadata entries the
+> updater can't read. 0.9.94's file is clean, and the updater inside every
+> existing copy can unpack it — so this is the first update that installs,
+> from whatever version you are on. Nothing to redownload.
+>
+> ### If updates still aren't working, download it again
 >
 > Grab a fresh copy from **<https://whiteoakmedia.io/tools>** and drag it over
 > your existing ProDeck. Your settings, dashboards, crew and reports all live
@@ -34,6 +43,22 @@ ProDeck is free, open source, and has no account or licence check. Version
 numbers below are the ones shown in **Settings → Software Update**.
 
 ---
+
+## 0.9.94 — 23 September 2026
+
+### Fixed — the Mac update that never installed
+
+Pressing **Install & Restart** on a Mac has failed on every release since
+auto-update was introduced, with *"failed to unpack `._ProDeck.app`"*. The
+update file we published contained macOS metadata sidecar entries that the
+updater's extractor cannot read; the built-in `tar` command on a Mac silently
+hides those same entries when you list an archive, which is why checking the
+file by hand always looked fine.
+
+The fault was in the file, not in ProDeck. Every existing Mac copy already has a
+working updater — it was simply never given anything it could unpack. This
+release is the first it can. Publishing now refuses to ship an archive with
+those entries, checked with a reader that can actually see them.
 
 ## 0.9.93 — 23 September 2026
 

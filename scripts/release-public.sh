@@ -103,7 +103,31 @@ codesign --verify --deep --strict "$APP"
 rm -rf "$OUT"; mkdir -p "$OUT"
 
 echo "▸ Updater artifact"
-tar -czf "$OUT/ProDeck.app.tar.gz" -C "$BUNDLE_DIR" ProDeck.app
+# COPYFILE_DISABLE stops macOS tar writing AppleDouble "._" sidecars for files
+# that carry extended attributes. Tauri's updater unpacks with the Rust `tar`
+# crate, which strips the first path component — so a top-level "._ProDeck.app"
+# becomes an EMPTY path and the update dies with
+#   failed to unpack `._ProDeck.app` into `/var/folders/…/tauri_updated_app…`
+# on every Mac, every time. System tar reads such archives fine, which is why
+# extracting the tarball by hand to check it never showed the problem.
+COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -czf "$OUT/ProDeck.app.tar.gz" -C "$BUNDLE_DIR" ProDeck.app
+# Refuse to ship an archive the updater cannot unpack. Checked with Python's
+# tarfile, NOT `tar -t`: macOS libarchive swallows AppleDouble entries as
+# metadata when it reads an archive and never lists them, so `tar -tzf` said
+# "clean" about the very archive the updater choked on. The Rust crate sees the
+# raw entries; so must the guard.
+python3 - "$OUT/ProDeck.app.tar.gz" <<'PYGUARD' || exit 1
+import sys, tarfile, os
+with tarfile.open(sys.argv[1]) as t:
+    names = t.getnames()
+dbl = [n for n in names if os.path.basename(n).startswith("._")]
+top = sorted({n.split("/")[0] for n in names})
+if dbl:
+    print(f"✗ updater tarball has {len(dbl)} AppleDouble (._*) entries, e.g. {dbl[0]} — the Tauri updater cannot unpack these"); sys.exit(1)
+if top != ["ProDeck.app"]:
+    print(f"✗ updater tarball top level must be exactly ProDeck.app, got {top}"); sys.exit(1)
+print(f"  ✓ tarball is clean: {len(names)} entries, single top-level ProDeck.app, no AppleDouble")
+PYGUARD
 TAURI_SIGNING_PRIVATE_KEY="$(cat "$KEY_PATH")" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
   npm run tauri -- signer sign "$OUT/ProDeck.app.tar.gz" >/dev/null
 [ -f "$OUT/ProDeck.app.tar.gz.sig" ] || { echo "✗ signing produced no .sig"; exit 1; }
