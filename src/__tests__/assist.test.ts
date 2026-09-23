@@ -89,6 +89,9 @@ describe("citations", () => {
     expect(resolveCite(map, "Waves LV1")).toBe("dest:waves");
     expect(resolveCite(map, "ULXD4Q-5-8 07")).toBe("src:ulxd4q-5-8:07");
     expect(resolveCite(map, "nothing here")).toBeUndefined();
+    // A raw id still links; a "bus X" prefix is tolerated.
+    expect(resolveCite(map, "dest:waves")).toBe("dest:waves");
+    expect(resolveCite(map, "place Waves LV1")).toBe("dest:waves");
     const c = cites(ctx(), "Channel 39 is open [ch 39]. Check the pack [ULXD4Q-5-8 07]. If Waves is down [Waves LV1]… [ch 39] again.");
     expect(c.map((x) => x.nodeId)).toEqual([chId("39"), "src:ulxd4q-5-8:07", "dest:waves"]);
   });

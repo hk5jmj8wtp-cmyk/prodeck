@@ -288,6 +288,8 @@ export function cites(ctx: AssistCtx, text: string): { label: string; nodeId: st
 
 export function resolveCite(map: RoutingMap, label: string): string | undefined {
   const l = label.toLowerCase();
+  // A raw node id slipped through — still link it.
+  if (map.nodes.some((x) => x.id === label)) return label;
   let m = /^(?:ch|channel)\s*(\d+(?:\s*[-–+]\s*\d+)?)$/.exec(l);
   if (m) {
     const n = channelByNumber(map, parseInt(m[1], 10));
@@ -298,7 +300,7 @@ export function resolveCite(map: RoutingMap, label: string): string | undefined 
     const n = map.nodes.find((x) => x.kind === "source" && x.ref?.port === "stage" && x.ref.index.split(/\s*[+\-–]\s*/).includes(m![1]));
     return n?.id;
   }
-  const byLabel = map.nodes.find((x) => x.label.toLowerCase() === l.replace(/^pocket\s+/, ""));
+  const byLabel = map.nodes.find((x) => x.label.toLowerCase() === l.replace(/^pocket\s+/, "").replace(/^(?:bus|place|destination|output)\s+/, ""));
   if (byLabel) return byLabel.id;
   const byRef = map.nodes.find((x) => x.ref && `${x.ref.port} ${x.ref.index}`.toLowerCase() === l);
   if (byRef) return byRef.id;
