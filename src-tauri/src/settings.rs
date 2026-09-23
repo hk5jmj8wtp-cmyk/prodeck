@@ -92,6 +92,17 @@ pub struct Settings {
     #[serde(default)]
     pub public_url: String,
     pub gemini_api_key: Option<String>,
+    /// "Ask ProDeck" troubleshooter (design/TROUBLESHOOTER.md). Secret; the
+    /// gateway strips it and pins it on browser round-trips.
+    pub assist_api_key: Option<String>,
+    pub assist_model: String,
+    /// Anthropic workspace id (wrkspc_…). Needed only for account-level keys,
+    /// which the API refuses without it; a workspace-scoped key leaves it blank.
+    pub assist_workspace_id: String,
+    /// Crew phones may ask (the booth always can).
+    pub assist_members: bool,
+    /// Calls per calendar month before the booth refuses; 0 = no cap.
+    pub assist_monthly_cap: u32,
     /// When true (and a key is set), Auto‑Follow uses Gemini to pick the slide,
     /// falling back to the local token matcher if Gemini is unavailable.
     pub gemini_match_enabled: bool,
@@ -236,6 +247,11 @@ impl Default for Settings {
             web_invite_token: String::new(),
             edge_admin_token: String::new(),
             gemini_api_key: None,
+            assist_api_key: None,
+            assist_model: String::new(),
+            assist_workspace_id: String::new(),
+            assist_members: true,
+            assist_monthly_cap: 500,
             gemini_match_enabled: false,
             audio_measure_channels: Vec::new(),
             audio_overflow_channels: Vec::new(),

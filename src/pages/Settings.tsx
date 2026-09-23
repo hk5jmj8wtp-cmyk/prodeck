@@ -10,6 +10,9 @@ import {
   connectMidi,
   disconnectMidi,
   geminiTest,
+  assistStatus,
+  assistKnowledgeDir,
+  type AssistStatus,
   invoke,
   IS_WEB,
   listAudioInputs,
@@ -151,6 +154,10 @@ export function SettingsPage() {
   // a working setup read as "off" everywhere except the booth.
   const ga4Ok = !!form?.ga4_property_id;
   const [geminiBusy, setGeminiBusy] = useState(false);
+  const [assist, setAssist] = useState<AssistStatus | null>(null);
+  useEffect(() => {
+    assistStatus().then(setAssist).catch(() => {});
+  }, []);
   const [chCount, setChCount] = useState(0);
   const [chanLevels, setChanLevels] = useState<number[]>([]);
 
@@ -362,7 +369,7 @@ export function SettingsPage() {
           { g: "Connections", items: [["ProPresenter", "set-pp"], ["Avantis", "set-avantis"], ["OBS", "set-obs"], ["Stage feed (NDI)", "set-ndi"], ["LAN Relay", "set-relay"], ...(!IS_WEB ? [["Browser Access", "set-web"]] : [])] },
           { g: "Audio", items: [["Audio & Captions", "set-audio"], ["Alerts", "set-alerts"]] },
           { g: "Crew", items: [["Crew Members", "set-crew"]] },
-          { g: "Advanced", items: [["Gemini", "set-gemini"], ["Control Inputs", "set-inputs"], ["Song Key", "set-songkey"], ["TapLink", "set-taplink"]] },
+          { g: "Advanced", items: [["Troubleshooter", "set-assist"], ["Gemini", "set-gemini"], ["Control Inputs", "set-inputs"], ["Song Key", "set-songkey"], ["TapLink", "set-taplink"]] },
           { g: "App", items: [["Updates", "set-update"], ...(!IS_WEB ? [["Reliability", "set-reliability"], ["Kiosk screens", "set-kiosk"], ["Backup", "set-backup"], ["Help", "set-help"]] : []), ["Appearance", "set-appearance"]] },
         ].map(({ g, items }) => (
           <span key={g} className="set-jump-group">
@@ -927,6 +934,62 @@ export function SettingsPage() {
           <code>G-</code> measurement ID. Add the service account as a <strong>Viewer</strong> on
           that property, and enable the Google Analytics Data API in its Cloud project. Leave the
           page filter blank when the property only covers the watch subdomain.
+        </p>
+      </section>
+
+      <section className="card">
+        <div className="card-head">
+          <h3 id="set-assist">Troubleshooter — Ask ProDeck</h3><HelpLink section="ask-prodeck" />
+          <span className={`chip ${form.assist_api_key ? "online" : ""}`}>{form.assist_api_key ? "on" : "off"}</span>
+        </div>
+        <p className="muted small">
+          A volunteer types what is wrong in their own words — on a phone under <strong>No sound?</strong> or here under
+          Routing — and gets what ProDeck already checked plus the next thing to walk to. It answers only from the routing
+          map, the knowledge files below and live state, cites every fact, and never touches the desk. The key stays on
+          this machine; phones ask through it.
+        </p>
+        <div className="settings-grid">
+          <label className="field wide">
+            <span>Anthropic API key (console.anthropic.com)</span>
+            <input
+              className="input"
+              type="password"
+              autoComplete="off"
+              placeholder="sk-ant-… — stored only on this machine"
+              value={form.assist_api_key ?? ""}
+              onChange={(e) => set("assist_api_key", e.target.value || null)}
+            />
+          </label>
+          <label className="field">
+            <span>Workspace ID (only for an account-level key)</span>
+            <input className="input" autoComplete="off" placeholder="wrkspc_… — console.anthropic.com → Settings → Workspaces" value={form.assist_workspace_id ?? ""} onChange={(e) => set("assist_workspace_id", e.target.value.trim())} />
+          </label>
+          <label className="field">
+            <span>Model</span>
+            <select className="input" value={form.assist_model || "claude-sonnet-5"} onChange={(e) => set("assist_model", e.target.value)}>
+              <option value="claude-sonnet-5">Claude Sonnet 5 — fast, recommended</option>
+              <option value="claude-opus-5">Claude Opus 5 — deeper, slower</option>
+              <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 — cheapest</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Calls per month before it stops (0 = no cap)</span>
+            <input className="input" type="number" min={0} value={form.assist_monthly_cap ?? 500} onChange={(e) => set("assist_monthly_cap", Math.max(0, parseInt(e.target.value || "0", 10)))} />
+          </label>
+          <label className="field check">
+            <input type="checkbox" checked={form.assist_members} onChange={(e) => set("assist_members", e.target.checked)} />
+            <span>Let crew phones ask (the booth always can)</span>
+          </label>
+        </div>
+        <p className="muted small" style={{ marginTop: 10 }}>
+          {assist ? `Used ${assist.usedThisMonth} of ${assist.monthlyCap || "∞"} calls this month · model ${assist.model}.` : ""}
+          {" "}
+          <strong>Knowledge files</strong>: {assist && assist.knowledgeFiles.length ? assist.knowledgeFiles.join(", ") : "none yet"}.
+          {" "}Plain markdown about your building, read on every question. Folder:{" "}
+          <button className="btn small ghost" onClick={() => assistKnowledgeDir().then((d) => { navigator.clipboard?.writeText(d).catch(() => {}); assistStatus().then(setAssist).catch(() => {}); })} title="Create the folder if needed and copy its path">
+            copy path
+          </button>
+          {assist?.knowledgeDir ? <span className="mono"> {assist.knowledgeDir}</span> : null}
         </p>
       </section>
 

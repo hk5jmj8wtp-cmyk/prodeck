@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { usePco } from "../pcoStore";
 import { StagePockets } from "./StagePockets";
+import { AskPanel } from "./AskPanel";
 import {
   ageText,
   channelsForDesk,
@@ -86,6 +87,7 @@ export function WalkPicker({
 
   return (
     <div className={`rw-picker ${compact ? "compact" : ""}`}>
+      <AskPanel map={map} live={live} onPick={onPick} compact={compact} />
       <div className="rw-seg" role="tablist">
         {people.length > 0 && (
           <button className={mode === "people" ? "on" : ""} onClick={() => setMode("people")}>

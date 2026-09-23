@@ -12,6 +12,7 @@ mod edge;
 mod identity;
 mod ga4;
 mod gemini;
+mod assist;
 mod midi;
 mod ndi;
 mod obs;
@@ -389,6 +390,11 @@ pub fn run() {
             // Gemini smart matching
             gemini::gemini_pick_slide,
             gemini::gemini_test,
+            assist::assist_complete,
+            assist::assist_status,
+            assist::load_knowledge,
+            assist::assist_log_tail,
+            assist::assist_knowledge_dir,
             // MIDI
             midi::list_midi_inputs,
             midi::connect_midi,

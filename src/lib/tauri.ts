@@ -288,6 +288,11 @@ export interface Settings {
   crew_roles: string[];
   edge_admin_token: string;
   gemini_api_key: string | null;
+  assist_api_key: string | null;
+  assist_model: string;
+  assist_workspace_id: string;
+  assist_members: boolean;
+  assist_monthly_cap: number;
   ga4_property_id: string;
   ga4_key_path: string;
   ga4_page_filter: string;
@@ -585,6 +590,23 @@ export const geminiPickSlide = (
   candidates: GeminiCandidate[],
 ) => invoke<GeminiMatch>("gemini_pick_slide", { transcript, candidates });
 export const geminiTest = () => invoke<string>("gemini_test");
+
+// ---- "Ask ProDeck" troubleshooter (design/TROUBLESHOOTER.md) ----------------
+export interface AssistStatus {
+  configured: boolean;
+  model: string;
+  members: boolean;
+  usedThisMonth: number;
+  monthlyCap: number;
+  knowledgeFiles: string[];
+  knowledgeDir: string;
+}
+export const assistStatus = () => invoke<AssistStatus>("assist_status");
+/** One Messages API call, proxied through the booth (the key stays there). */
+export const assistComplete = (body: Json) => invoke<Json>("assist_complete", { body });
+export const loadKnowledge = () => invoke<{ name: string; text: string }[]>("load_knowledge");
+export const assistLogTail = (n = 50) => invoke<Json[]>("assist_log_tail", { n });
+export const assistKnowledgeDir = () => invoke<string>("assist_knowledge_dir");
 
 // ---------------------------------------------------------------------------
 // MIDI + OSC

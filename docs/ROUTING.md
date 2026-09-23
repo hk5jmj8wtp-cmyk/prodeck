@@ -113,6 +113,17 @@ ProDeck can't see a hop it says so and hands over the checklist.
 
 Phones read the map; the booth edits it. Booth edits reach phones live.
 
+## Ask ProDeck
+
+With an Anthropic key in **Settings → Troubleshooter**, a box appears above
+the walk: type what is wrong in your own words. The answer is grounded — the
+model can only use the routing map, your knowledge files (plain markdown in
+a folder on the booth) and the desk's live state, must cite every building
+fact (shown as links to the walk), and cannot change anything. Its general
+method ships with ProDeck as text (`src/assist/doctrine.md`) so it can be
+read and improved. Phones ask through the booth; the key never leaves it.
+Everything asked is logged on the booth. Spec: `design/TROUBLESHOOTER.md`.
+
 ## Coming from the old Routing page
 
 Maps saved by ProDeck 1.0 (linear chains of hops) are converted on first

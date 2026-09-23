@@ -71,6 +71,27 @@ Maps saved by the old Routing page are converted on first open with every
 step kept, and nothing is written until you press Save. Until you paste your
 own list, the page shows a clearly-labelled sixteen-channel example.
 
+### New — Ask ProDeck: describe the problem, get walked to the fix
+
+A volunteer alone at 9am can now type what is wrong in their own words —
+"Ruth's mic is crackling", "nothing from the keys", "the stream is quiet" —
+under **No sound?** on a phone or the booth, and get an answer the way an
+experienced sound tech would give it: one clarifying question if it really
+needs one, what ProDeck already checked live, then the next physical thing to
+walk to and look at, most likely first, naming the actual receiver, socket and
+channel.
+
+It is built to be trustworthy rather than clever. It can only speak from this
+building's routing map, a folder of plain-text notes you write (the
+**knowledge files**), and the live state of the desk; every fact it uses is
+tied to something on the map and shown as a link under the answer; it never
+touches the desk. Its general sound knowledge is a written method that ships
+with ProDeck — signal-flow reasoning, symptom → cause, wireless, Dante,
+scenes, rules during a service — so what it knows is reviewable. Every
+question and answer is logged on the booth. Set it up in **Settings →
+Troubleshooter** with an Anthropic API key, which stays on the booth; phones
+ask through it. A monthly call cap keeps the bill bounded.
+
 ### New — Routing → Stage: the wall, pocket by pocket
 
 Every stage pocket drawn as its sockets. Each tile shows the socket number,

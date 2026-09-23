@@ -753,6 +753,24 @@ To change the map, press **Edit** first:
     related: ["routing-map", "routing-walk"],
   },
   {
+    id: "ask-prodeck",
+    group: "Troubleshooting",
+    title: "Ask ProDeck when something is wrong",
+    aliases: ["ask prodeck", "troubleshooter chat", "ai help", "anthropic api key", "claude", "ask a question about the sound", "knowledge folder"],
+    body: `**Ask ProDeck** is a box at the top of **No sound?** (phone: Home → No sound?; booth: Routing → No sound?). Type what is wrong in your own words — "Ruth's mic is crackling", "nothing from the keys", "the stream is quiet" — and it answers the way an experienced tech would: one clarifying question if it needs one, what ProDeck already checked, then the next thing to walk to and look at.
+
+It can only say what this building's **routing map**, **knowledge files** and **live state** say. Every fact it uses is tied to a thing on the map, shown as a link under the answer — tap it to open the walk. It never touches the desk.
+
+To turn it on: **Settings → Troubleshooter**, paste an Anthropic API key (console.anthropic.com), pick a model, and choose whether crew phones may ask. The key stays on the booth; phones ask through it.
+
+- **Knowledge files.** A folder on the booth (Settings shows where) holding plain markdown about your building: machines and addresses, which scenes are safe to recall mid-service, what feeds what, known oddities. Everything in it is read on every question. Write what a new sound tech would need.
+- **The log.** Every question and answer is kept on the booth so whoever owns the room can see what was asked and fix the notes.
+- **The cap.** A monthly call limit, 500 by default, so a stuck phone can't run up a bill.
+
+> Its general sound knowledge is a written method that ships with ProDeck — signal-flow reasoning, symptoms and causes, wireless, Dante, scenes, rules during a service. It is told to reason from that text and this building's notes, not from memory.`,
+    related: ["routing-walk", "routing-map"],
+  },
+  {
     id: "routing-walk",
     group: "Troubleshooting",
     title: "When something has no sound",

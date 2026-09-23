@@ -9041,3 +9041,141 @@ select.input {
   color: var(--muted);
   font-size: 13px;
 }
+
+/* ---------------------------------------------------------------------
+   Ask ProDeck — the troubleshooter chat. Sits above the deterministic picker
+   on No sound?; the same component on phones (overrides in mobile.css). */
+.ask {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px 12px;
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  border-radius: 12px;
+  margin-bottom: 6px;
+}
+.ask-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+}
+.ask-title {
+  font-weight: 700;
+  font-size: 13.5px;
+}
+.ask-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+.ask-turns {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 46vh;
+  overflow: auto;
+  padding-right: 2px;
+}
+.ask-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ask-turn.user {
+  align-items: flex-end;
+}
+.ask-bubble {
+  max-width: 92%;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.ask-turn.user .ask-bubble {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+.ask-bubble p {
+  margin: 0 0 6px;
+}
+.ask-bubble p:last-child {
+  margin-bottom: 0;
+}
+.ask-bubble ol,
+.ask-bubble ul {
+  margin: 4px 0 6px;
+  padding-left: 20px;
+}
+.ask-bubble li {
+  margin: 3px 0;
+}
+.ask-thinking {
+  color: var(--muted);
+  font-style: italic;
+}
+.ask-cites {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ask-cite {
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-line);
+  background: var(--panel);
+  color: var(--accent-hi);
+  cursor: pointer;
+}
+.ask-cite:hover {
+  background: var(--accent-soft);
+}
+.ask-err {
+  font-size: 12.5px;
+  color: var(--warn);
+}
+.ask-form {
+  display: flex;
+  gap: 8px;
+}
+.ask-input {
+  flex: 1;
+  padding: 9px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+}
+.ask-send {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: var(--accent-ink);
+  cursor: pointer;
+}
+.ask-send:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ask-reset {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  padding: 0;
+}

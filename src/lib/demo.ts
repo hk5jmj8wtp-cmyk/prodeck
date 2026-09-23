@@ -357,6 +357,7 @@ const ARRAY_CMDS = new Set([
   "chat_history", "page_list", "identity_roles", "discover_services",
   "invite_list", "ndi_discover_sources", "posfile_list", "tap_check_links",
   "diag_recent_log", "list_audio_inputs", "list_midi_inputs", "list_midi_outputs",
+  "load_knowledge", "assist_log_tail",
 ]);
 /** Commands whose callers read fields off the result. */
 const OBJECT_CMDS: Record<string, unknown> = {
@@ -365,6 +366,7 @@ const OBJECT_CMDS: Record<string, unknown> = {
   tap_mappings: { mappings: {}, default: "" },
   pco_live_controller: { controller: null, me: false },
   pp_is_connected: true,
+  assist_status: { configured: false, model: "claude-sonnet-5", members: true, usedThisMonth: 0, monthlyCap: 500, knowledgeFiles: [], knowledgeDir: "" },
   audio_input_channels: 2,
   default_audio_input: "Demo Input (2ch)",
 };

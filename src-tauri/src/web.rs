@@ -1290,6 +1290,10 @@ pub(crate) fn member_cmd_ok(cmd: &str) -> bool {
         cmd,
         "get_settings" | "load_dashboards" | "load_pco_data" | "load_tracking"
             | "load_checklists" | "load_routing" | "chat_history" | "web_whoami" | "pp_get"
+            // The troubleshooter: the dossier is the crew's own building, the
+            // status carries no secret, and asking is gated on the setting in
+            // dispatch (assist_complete is handled there).
+            | "load_knowledge" | "assist_status" | "assist_complete"
             | "tap_edge_state" | "tap_stats" | "tap_stats_range"
             // Role channels: members must see which channels exist. Roles
             // only — the roster (names, ids) stays admin-tier.
@@ -1410,6 +1414,7 @@ async fn dispatch(
             // Browser clients never receive secrets — only the host holds them.
             set.pco_secret = None;
             set.gemini_api_key = None;
+            set.assist_api_key = None;
             set.web_password = String::new();
             set.web_member_password = String::new();
             set.web_invite_token = String::new();
@@ -1737,6 +1742,18 @@ async fn dispatch(
             crate::settings::save(&to_save)?;
             Ok(json!({ "until": until }))
         }
+        "load_knowledge" => Ok(Value::Array(crate::assist::knowledge_core())),
+        "assist_status" => Ok(crate::assist::status_core(app.state::<SettingsState>().inner())),
+        "assist_complete" => {
+            let st = app.state::<SettingsState>();
+            let allowed = tier == Tier::Admin || st.lock().unwrap_or_else(|p| p.into_inner()).assist_members;
+            if !allowed {
+                return Err("Asking is turned off for crew phones (Settings → Troubleshooter).".into());
+            }
+            let body = args.get("body").cloned().unwrap_or(Value::Null);
+            let who = caller.as_ref().map(|c| c.name.clone()).unwrap_or_else(|| if tier == Tier::Admin { "admin browser".into() } else { "member".into() });
+            crate::assist::complete_core(st.inner(), body, &who).await
+        }
         // Admin-only by default (spends the church's Gemini quota).
         "help_ask" => {
             let q = s("question").unwrap_or_default();
@@ -1805,6 +1822,10 @@ async fn dispatch(
                 }
 
                 new.gemini_api_key = g.gemini_api_key.clone();
+                // Redacted on read; a typed key from an admin browser is let through.
+                if new.assist_api_key.as_deref().unwrap_or("").trim().is_empty() {
+                    new.assist_api_key = g.assist_api_key.clone();
+                }
                 // Redacted in get_settings, so a browser round-trip would send it
                 // back empty and silently unconfigure the viewer count.
                 new.ga4_key_path = g.ga4_key_path.clone();
