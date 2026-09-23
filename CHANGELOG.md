@@ -44,6 +44,35 @@ numbers below are the ones shown in **Settings → Software Update**.
 
 ---
 
+## Unreleased
+
+### New — Routing is now a real map, and it answers "no sound?" on a phone
+
+The Routing page has been rebuilt around the one fact that survives every
+Sunday: channel names change, numbers don't. It is now the patch list every
+sound tech already has — **channel · door · socket · upstream** — pasted in
+from a spreadsheet in one go, with names filling in live from the desk.
+
+Click a row for what to walk to when that channel is the suspect. Every kind
+of source (wireless pack, stage socket, playback computer, rack XLR, Dante
+device) starts with a sensible checklist you edit to name your own receivers
+and panels. Mark a socket **dead** and the walk routes around it. Two channels
+on one socket are flagged: they share one gain.
+
+**No sound?** — on a phone from Home, on the booth from Routing — takes a
+person (this week's team, via their mic), a channel or a place, and does two
+things in order: shows what ProDeck already checked from the booth (muted or
+fader down on the desk, desk connected, signal at ProDeck's own input), then
+lists what is left to walk to, most likely first, with the rule that explains
+each surprise right under the step. Every tick is a place nobody had to walk
+to. Nothing here guesses; if ProDeck can't see a hop it says so.
+
+Maps saved by the old Routing page are converted on first open with every
+step kept, and nothing is written until you press Save. Until you paste your
+own list, the page shows a clearly-labelled sixteen-channel example.
+
+Help: *Building your routing map* and *When something has no sound*.
+
 ## 0.9.95 — 23 September 2026
 
 ### Fixed — after an update installed, ProDeck didn't come back

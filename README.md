@@ -103,6 +103,8 @@ code.
 
 - [docs/CREW.md](docs/CREW.md) — accounts, joining, approval, roles, and what
   the two passwords actually decide.
+- [docs/ROUTING.md](docs/ROUTING.md) — the signal map: paste your patch list, and the
+  "No sound?" walk that tells a volunteer what the booth already checked.
 - [docs/TAPLINK.md](docs/TAPLINK.md) — the lobby NFC discs: what you need, how
   to deploy your own edge, links, discs, slide tags.
 

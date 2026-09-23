@@ -60,6 +60,7 @@ const FORWARD_EVENTS: &[&str] = &[
     "tap:pushed",
     "tap:error",
     "checklist:changed",
+    "routing:changed",
     "chat:confidence_clear",
     "identity:changed",
 ];

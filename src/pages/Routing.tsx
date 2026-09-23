@@ -1,374 +1,555 @@
-import { useEffect, useState } from "react";
-import { useAlerts } from "../alertsStore";
-import { loadRouting, saveRouting, IS_WEB, type Json } from "../lib/tauri";
+import { useEffect, useMemo, useState } from "react";
+import { IS_DEMO, IS_WEB } from "../lib/tauri";
 import { askConfirm } from "../lib/dialogs";
+import { useRouting, useRoutingLive } from "../routingStore";
+import { WalkPicker, WalkView } from "../components/RoutingWalk";
+import {
+  ageText,
+  applyRow,
+  channelRows,
+  deskKeyFor,
+  DOOR_LABELS,
+  edgesInto,
+  node,
+  parsePatchList,
+  removeChannel,
+  STALE_AFTER_MS,
+  stepsFor,
+  toPatchList,
+  type ChannelRow,
+  type RoutingMap,
+  type Transport,
+} from "../lib/routing";
 
-// Routing — the system's signal map, written for the volunteer who has to
-// answer "why is there no sound" alone. Each chain is a list of hops
-// (from → transport → to); a hop can watch one of ProDeck's live subsystems
-// so the chain shows exactly where things are healthy vs. unknown, and each
-// hop carries its own "if this is the problem" steps for THIS building —
-// Dante, not generic "check the cable".
+// Routing — the building's signal map, as the table every sound tech already
+// has (CH · NAME · PORT · SOCKET · UPSTREAM) and as the walk a volunteer uses
+// when a mic is dead. Spec: design/ROUTING.md. Numbers are the key; names
+// arrive live from the desk and are only ever an override here.
 //
-// The map is data (routing.json), edited here on the booth; web clients get
-// it read-only. ProDeck can only truly see its own inputs (Dante capture, PP,
-// NDI stage feed, its web gateway) — everything else renders as a plain hop
-// with steps, which is still the point: the knowledge lives on the screen,
-// not in Zach's head.
+// Booth edits a draft and saves it; phones read. Nothing is written until the
+// file has been read successfully once — a map a church typed in is not ours
+// to replace with a seed.
 
-interface Hop {
-  from: string;
-  to: string;
-  transport: string; // "Dante", "NDI", "HDMI", "Wi-Fi", "analog"…
-  watch?: "audio" | "pp" | "stage" | "desk" | null; // live light from ProDeck, if any
-  steps: string[]; // what to try when this hop is the suspect
-}
-interface Chain {
-  id: string;
-  name: string;
-  hops: Hop[];
-}
+type Tab = "channels" | "walk";
 
-// First-run seed: Cornerstone's actual system as of Aug 2026. Everything is
-// editable in place — this is a starting map, not a hardcoded truth.
-const SEED: Chain[] = [
-  {
-    id: "audio",
-    name: "House audio",
-    hops: [
-      {
-        from: "Stage mics & instruments",
-        to: "Stage box",
-        transport: "XLR / analog",
-        steps: [
-          "Is the mic/DI plugged in and the channel unmuted on stage?",
-          "Try a different XLR cable or stage box port.",
-        ],
-      },
-      {
-        from: "Stage box",
-        to: "eMotion LV1 mixer",
-        transport: "Dante",
-        steps: [
-          "Open Dante Controller — is the stage box online and subscribed to the LV1?",
-          "Check the network switch: link lights on, PoE if the box needs it.",
-        ],
-      },
-      {
-        from: "eMotion LV1 mixer",
-        to: "House speakers",
-        transport: "Dante",
-        steps: [
-          "Is the master fader up and unmuted in LV1?",
-          "Did the LV1 session load its scene? Recall the Sunday scene.",
-        ],
-      },
-      {
-        from: "eMotion LV1 mixer",
-        to: "Booth Mac (ProDeck)",
-        transport: "Dante",
-        watch: "audio",
-        steps: [
-          "This is the feed ProDeck listens to for SPL and phone Listen.",
-          "Open Dante Controller — confirm the route from the LV1 to this Mac's Dante channels.",
-          "In ProDeck: Settings → Audio, confirm the input device and overflow channels.",
-        ],
-      },
-    ],
-  },
-  {
-    id: "video",
-    name: "Lyrics & screens",
-    hops: [
-      {
-        from: "ProPresenter",
-        to: "ProDeck (this app)",
-        transport: "Network API",
-        watch: "pp",
-        steps: [
-          "Is ProPresenter open on the presentation Mac?",
-          "ProDeck reconnects on its own; if the light stays red, open the ProPresenter page and press Find.",
-        ],
-      },
-      {
-        from: "ProPresenter",
-        to: "Stage confidence screen",
-        transport: "NDI",
-        watch: "stage",
-        steps: [
-          "Check ProPresenter's NDI output is enabled (Preferences → Displays).",
-          "Check the network switch — NDI rides the same network as Dante.",
-        ],
-      },
-      {
-        from: "ProPresenter",
-        to: "Projector / main screen",
-        transport: "HDMI",
-        steps: [
-          "Is the projector on and set to the right input?",
-          "Reseat the HDMI at the presentation Mac end first — it's the one that gets bumped.",
-        ],
-      },
-    ],
-  },
-  {
-    id: "crew",
-    name: "Crew phones",
-    hops: [
-      {
-        from: "ProDeck booth Mac",
-        to: "Phones & tablets",
-        transport: "Wi-Fi / your public URL",
-        steps: [
-          "ProDeck must be running on the booth Mac — the phones talk to it, not to a cloud.",
-          "On the phone: venue Wi-Fi, or your public URL from anywhere.",
-          "Still stuck? Quit and reopen ProDeck on the booth Mac.",
-        ],
-      },
-    ],
-  },
+const PORT_OPTIONS: { value: Transport | ""; label: string }[] = [
+  { value: "", label: "— not patched" },
+  { value: "slink", label: "SLink / stage box" },
+  { value: "dante", label: "I/O Port 1 (Dante)" },
+  { value: "local", label: "Local (rack XLR)" },
+  { value: "me", label: "ME" },
+  { value: "analog", label: "Analog" },
+  { value: "other", label: "Other" },
 ];
 
-const uid = () => Math.random().toString(36).slice(2, 9);
+const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
+/** Editing is booth-only — except in demo mode, where trying the table with
+ *  sample data is the point and nothing is written anywhere. */
+const CAN_EDIT = !IS_WEB || IS_DEMO;
 
 export function RoutingPage() {
-  const { subsystems } = useAlerts();
-  const [chains, setChains] = useState<Chain[] | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [openHop, setOpenHop] = useState<string | null>(null); // "chainId:idx"
-  const [saveErr, setSaveErr] = useState("");
-  const [loadErr, setLoadErr] = useState("");
+  const routing = useRouting();
+  const live = useRoutingLive();
+  const [tab, setTab] = useState<Tab>("channels");
+  const [draft, setDraft] = useState<RoutingMap | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [walkTarget, setWalkTarget] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
+  const map = draft ?? routing.map;
+  const editing = draft !== null;
+  const rows = useMemo(() => (map ? channelRows(map) : []), [map]);
+  const now = live.now;
+
+  // A migrated map is shown as a draft straight away: it is theirs to keep.
   useEffect(() => {
-    loadRouting()
-      .then((d) => {
-        const arr = (d as unknown as { chains?: Chain[] })?.chains;
-        // An EMPTY array is a real answer — someone deleted every chain.
-        // Treating it as first-run resurrected Cornerstone's seed map on the
-        // next restart. Only a genuinely absent file gets the seeds.
-        setChains(Array.isArray(arr) ? arr : SEED);
-      })
-      // A rejection means routing.json is there but unreadable. Seeding here
-      // replaced the operator's signal map with ours, and the first edit made
-      // that permanent.
-      .catch((e) => setLoadErr(String(e)));
-  }, []);
+    if (routing.migrated && routing.map && !draft && CAN_EDIT) setDraft(clone(routing.map));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routing.migrated, routing.map]);
 
-  async function persist(next: Chain[]) {
-    if (loadErr) return; // never write over a file we could not read
-    setChains(next);
-    if (IS_WEB) return; // web is read-only; the booth owns routing.json
+  function mutate(fn: (m: RoutingMap) => void) {
+    setDraft((d) => {
+      const m = clone(d ?? routing.map!);
+      fn(m);
+      return m;
+    });
+  }
+
+  async function save() {
+    if (!draft) return;
+    await routing.save(draft);
+    setDraft(null);
+    setOpen(null);
+  }
+
+  async function cancel() {
+    if (routing.migrated) {
+      const ok = await askConfirm("Discard the converted map? The old file stays as it was until you save.", "Discard");
+      if (!ok) return;
+    }
+    setDraft(null);
+    setOpen(null);
+  }
+
+  function verifyAll() {
+    mutate((m) => {
+      const at = Date.now();
+      m.nodes.forEach((n) => (n.verified = at));
+      m.edges.forEach((e) => (e.verified = at));
+      m.verified = { at, by: "booth" };
+    });
+  }
+
+  function applyPaste() {
+    const p = parsePatchList(pasteText);
+    if (p.rows.length === 0) return;
+    mutate((m) => {
+      for (const r of p.rows) applyRow(m, r);
+      m.example = false;
+    });
+    setPasteText("");
+    setPasteOpen(false);
+  }
+
+  async function copyText() {
+    if (!map) return;
     try {
-      await saveRouting({ chains: next } as unknown as Json);
-      setSaveErr("");
-    } catch (e) {
-      setSaveErr(String(e));
+      await navigator.clipboard.writeText(toPatchList(map));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard denied — the text is still visible in the paste panel */
     }
   }
 
-  // A hop's live light, when it watches something ProDeck can actually see.
-  // "stage" maps onto the NDI subsystem ("cam" key, labeled Stage).
-  function lightFor(h: Hop): { state: string; detail: string } | null {
-    if (!h.watch) return null;
-    const key = h.watch === "stage" ? "cam" : h.watch;
-    const s = subsystems.find((x) => x.key === key);
-    return s ? { state: s.state, detail: s.detail } : null;
+  if (!map) {
+    return (
+      <div className="page routing-page">
+        <header className="page-head">
+          <h1>Routing</h1>
+        </header>
+        {routing.loadErr ? (
+          <div className="banner">
+            routing.json is there but can't be read: {routing.loadErr}. Nothing will be written over it. Fix or remove the file, then reopen this page.
+          </div>
+        ) : (
+          <p className="muted small">Loading the map…</p>
+        )}
+      </div>
+    );
   }
 
-  if (!chains) return <div className="page"><header className="page-head"><h1>Routing</h1></header></div>;
+  const staleAt = map.verified?.at;
+  const stale = !staleAt || now - staleAt > STALE_AFTER_MS;
+  const pasted = pasteOpen ? parsePatchList(pasteText) : null;
 
   return (
     <div className="page routing-page">
       <header className="page-head">
         <h1>Routing</h1>
-        {!IS_WEB && (
-          <button
-            className={`btn small ${editing ? "primary" : "ghost"}`}
-            onClick={() => setEditing((v) => !v)}
-          >
-            {editing ? "Done" : "Edit"}
+        <div className="rt-tabs" role="tablist">
+          <button className={tab === "channels" ? "on" : ""} onClick={() => setTab("channels")}>
+            Channels
+          </button>
+          <button className={tab === "walk" ? "on" : ""} onClick={() => setTab("walk")}>
+            No sound?
+          </button>
+        </div>
+        <span style={{ flex: 1 }} />
+        {tab === "channels" && CAN_EDIT && !editing && (
+          <button className="btn small ghost" onClick={() => setDraft(clone(map))}>
+            Edit
           </button>
         )}
+        {tab === "channels" && editing && (
+          <>
+            <button className="btn small ghost" onClick={cancel}>
+              Cancel
+            </button>
+            <button className="btn small primary" onClick={save}>
+              Save
+            </button>
+          </>
+        )}
       </header>
-      <p className="muted small routing-intro">
-        How signal moves through this building. A colored dot means ProDeck can
-        see that link live; click any hop for what to try when it's the suspect.
-      </p>
-      {saveErr && <div className="banner">Couldn't save: {saveErr}</div>}
 
-      {chains.map((c, ci) => (
-        <section key={c.id} className="card">
-          <div className="card-head">
-            {editing ? (
-              <input
-                className="input"
-                value={c.name}
-                onChange={(e) =>
-                  persist(chains.map((x, i) => (i === ci ? { ...x, name: e.target.value } : x)))
-                }
+      {routing.saveErr && <div className="banner">Couldn't save: {routing.saveErr}</div>}
+      {routing.migrated && editing && (
+        <div className="banner rt-note">
+          Converted from the old Routing chains. Every hop and its steps are here as nodes with guessed kinds — look it over, then <strong>Save</strong> to keep it.
+        </div>
+      )}
+      {map.example && (
+        <div className="banner rt-note">
+          <strong>This is the example map</strong> that ships with ProDeck — a sixteen-channel church that isn't yours. Press Edit, then <strong>Paste patch list</strong> with your own channels, and it is replaced.
+        </div>
+      )}
+
+      {tab === "walk" && (
+        <div className="card rt-walk-card">
+          {!walkTarget && (
+            <p className="muted small routing-intro">
+              Pick a person, a channel or a place. ProDeck checks what it can see from here — the desk, its own inputs — then lists what is left to walk to, most likely first.
+            </p>
+          )}
+          {!walkTarget && <WalkPicker map={map} live={live} onPick={setWalkTarget} />}
+          {walkTarget && <WalkView map={map} live={live} targetId={walkTarget} onBack={() => setWalkTarget(null)} onPick={setWalkTarget} />}
+        </div>
+      )}
+
+      {tab === "channels" && (
+        <>
+          <p className="muted small routing-intro">
+            Every console channel, the door it comes in through, the socket on that door, and what is upstream of the socket. Names fill in from the desk; typing one here only overrides it.
+          </p>
+
+          <div className="rt-toolbar">
+            <span className={`rt-age ${stale ? "stale" : ""}`}>Map {ageText(staleAt, now)}</span>
+            {editing && (
+              <>
+                <button className="btn small ghost" onClick={() => setPasteOpen((v) => !v)}>
+                  Paste patch list
+                </button>
+                <button className="btn small ghost" onClick={verifyAll} title="Stamp every row as checked today">
+                  Mark all verified
+                </button>
+              </>
+            )}
+            <button className="btn small ghost" onClick={copyText}>
+              {copied ? "Copied" : "Copy as text"}
+            </button>
+          </div>
+
+          {pasteOpen && editing && (
+            <div className="card rt-paste">
+              <p className="muted small">
+                One channel per line: <span className="mono">CH · NAME · PORT · SOCKET · UPSTREAM</span>, separated by tabs (straight from a spreadsheet) or commas. A header row is fine. Existing channels with the same number are updated; their steps and notes are kept.
+              </p>
+              <textarea
+                id="rt-paste"
+                className="input rt-paste-text"
+                rows={8}
+                placeholder={"39\tvox 3\tI/O Port 1\t43\tULXD4Q-5-8 07\n1\tKick IN\tSLink\t1\tstage 1"}
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
               />
-            ) : (
-              <h3>{c.name}</h3>
-            )}
-            {editing && (
-              <button
-                className="btn small ghost"
-                onClick={async () => {
-                  if (await askConfirm(`Delete the "${c.name}" chain?`))
-                    persist(chains.filter((_, i) => i !== ci));
-                }}
-              >
-                Delete chain
-              </button>
-            )}
-          </div>
-          <div className="routing-chain">
-            {c.hops.map((h, hi) => {
-              const key = `${c.id}:${hi}`;
-              const light = lightFor(h);
-              const open = openHop === key;
-              return (
-                <div key={key} className="routing-hop-wrap">
-                  <button
-                    className={`routing-hop ${open ? "open" : ""}`}
-                    onClick={() => setOpenHop(open ? null : key)}
-                  >
-                    <span className="rh-from">{h.from}</span>
-                    <span className="rh-arrow">
-                      <span className="rh-transport">{h.transport}</span>→
-                    </span>
-                    <span className="rh-to">{h.to}</span>
-                    {light ? (
-                      <span
-                        className={`hl-dot ${light.state}`}
-                        title={`ProDeck sees this live: ${light.detail}`}
-                      />
-                    ) : (
-                      <span className="hl-dot unknown" title="ProDeck can't see this link — steps only" />
-                    )}
-                  </button>
-                  {open && (
-                    <div className="routing-steps">
-                      {editing ? (
-                        <>
-                          <div className="field-row">
-                            <input
-                              className="input"
-                              value={h.from}
-                              placeholder="From"
-                              onChange={(e) => {
-                                const hops = c.hops.map((x, i) =>
-                                  i === hi ? { ...x, from: e.target.value } : x,
-                                );
-                                persist(chains.map((x, i) => (i === ci ? { ...x, hops } : x)));
-                              }}
-                            />
-                            <input
-                              className="input"
-                              style={{ maxWidth: 110 }}
-                              value={h.transport}
-                              placeholder="Transport"
-                              onChange={(e) => {
-                                const hops = c.hops.map((x, i) =>
-                                  i === hi ? { ...x, transport: e.target.value } : x,
-                                );
-                                persist(chains.map((x, i) => (i === ci ? { ...x, hops } : x)));
-                              }}
-                            />
-                            <input
-                              className="input"
-                              value={h.to}
-                              placeholder="To"
-                              onChange={(e) => {
-                                const hops = c.hops.map((x, i) =>
-                                  i === hi ? { ...x, to: e.target.value } : x,
-                                );
-                                persist(chains.map((x, i) => (i === ci ? { ...x, hops } : x)));
-                              }}
-                            />
-                            <select
-                              className="input"
-                              style={{ maxWidth: 160 }}
-                              value={h.watch ?? ""}
-                              title="Tie this hop to something ProDeck can see live"
-                              onChange={(e) => {
-                                const w = (e.target.value || null) as Hop["watch"];
-                                const hops = c.hops.map((x, i) =>
-                                  i === hi ? { ...x, watch: w } : x,
-                                );
-                                persist(chains.map((x, i) => (i === ci ? { ...x, hops } : x)));
-                              }}
-                            >
-                              <option value="">no live light</option>
-                              <option value="audio">Audio input (Dante)</option>
-                              <option value="pp">ProPresenter link</option>
-                              <option value="stage">Stage feed (NDI)</option>
-                              <option value="desk">Avantis desk link</option>
-                            </select>
-                          </div>
-                          <textarea
-                            className="input routing-steps-edit"
-                            rows={Math.max(3, h.steps.length + 1)}
-                            value={h.steps.join("\n")}
-                            placeholder="One troubleshooting step per line"
-                            onChange={(e) => {
-                              const hops = c.hops.map((x, i) =>
-                                i === hi ? { ...x, steps: e.target.value.split("\n") } : x,
-                              );
-                              persist(chains.map((x, i) => (i === ci ? { ...x, hops } : x)));
-                            }}
-                          />
-                          <button
-                            className="btn small ghost"
-                            onClick={() => {
-                              const hops = c.hops.filter((_, i) => i !== hi);
-                              persist(chains.map((x, i) => (i === ci ? { ...x, hops } : x)));
-                              setOpenHop(null);
-                            }}
-                          >
-                            Remove hop
-                          </button>
-                        </>
-                      ) : (
-                        <ol>
-                          {h.steps.filter((s) => s.trim()).map((s, i) => (
-                            <li key={i}>{s}</li>
-                          ))}
-                        </ol>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {editing && (
-              <button
-                className="btn small ghost"
-                onClick={() => {
-                  const hops = [
-                    ...c.hops,
-                    { from: "New source", to: "New destination", transport: "Dante", steps: [""] },
-                  ];
-                  persist(chains.map((x, i) => (i === ci ? { ...x, hops } : x)));
-                }}
-              >
-                + Add hop
-              </button>
-            )}
-          </div>
-        </section>
-      ))}
+              <div className="rt-paste-foot">
+                <span className="muted small">
+                  {pasted && pasted.rows.length > 0 ? `${pasted.rows.length} channel${pasted.rows.length === 1 ? "" : "s"} ready` : "Nothing recognised yet"}
+                  {pasted && pasted.skipped.length > 0 ? ` · ${pasted.skipped.length} line${pasted.skipped.length === 1 ? "" : "s"} skipped` : ""}
+                </span>
+                <button className="btn small primary" disabled={!pasted || pasted.rows.length === 0} onClick={applyPaste}>
+                  Apply
+                </button>
+              </div>
+            </div>
+          )}
 
-      {editing && (
-        <button
-          className="btn"
-          onClick={() =>
-            persist([...chains, { id: uid(), name: "New chain", hops: [] }])
-          }
-        >
-          + Add chain
-        </button>
+          <div className="card rt-table-card">
+            <table className="rt-table">
+              <thead>
+                <tr>
+                  <th className="n">CH</th>
+                  <th>Name</th>
+                  <th>Port</th>
+                  <th className="n">Socket</th>
+                  <th>Upstream</th>
+                  <th>Live</th>
+                  <th className="n">Checked</th>
+                  {editing && <th />}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <RowView
+                    key={r.nodeId}
+                    r={r}
+                    map={map}
+                    live={live}
+                    editing={editing}
+                    open={open === r.nodeId}
+                    onToggle={() => setOpen(open === r.nodeId ? null : r.nodeId)}
+                    onChange={(patch) => mutate((m) => void applyRow(m, { ch: r.ch, name: r.name, port: r.doorLabel, socket: r.socket, upstream: r.upstream, ...patch }))}
+                    onRemove={() => mutate((m) => removeChannel(m, r.nodeId))}
+                    onVerify={() =>
+                      mutate((m) => {
+                        const at = Date.now();
+                        const n = node(m, r.nodeId);
+                        if (n) n.verified = at;
+                        for (const e of edgesInto(m, r.nodeId)) {
+                          e.verified = at;
+                          const d = node(m, e.from);
+                          if (d) d.verified = at;
+                          for (const up of edgesInto(m, e.from).filter((x) => x.at === e.at)) {
+                            up.verified = at;
+                            const s = node(m, up.from);
+                            if (s) s.verified = at;
+                          }
+                        }
+                      })
+                    }
+                    onSteps={(nodeId, steps) =>
+                      mutate((m) => {
+                        const n = node(m, nodeId);
+                        if (n) n.steps = steps.length ? steps : undefined;
+                      })
+                    }
+                    onDead={(nodeId, dead) =>
+                      mutate((m) => {
+                        const n = node(m, nodeId);
+                        if (n) n.dead = dead || undefined;
+                      })
+                    }
+                    onWalk={() => {
+                      setWalkTarget(r.nodeId);
+                      setTab("walk");
+                    }}
+                  />
+                ))}
+                {editing && <AddRow onAdd={(ch) => mutate((m) => void applyRow(m, { ch, name: "" }))} taken={rows.map((r) => r.ch)} />}
+              </tbody>
+            </table>
+            {rows.length === 0 && <p className="muted small" style={{ marginTop: 10 }}>No channels yet. Press Edit, then Paste patch list.</p>}
+          </div>
+
+          {map.watchlist.length > 0 && (
+            <div className="card">
+              <div className="card-head">
+                <h3>Things to watch</h3>
+              </div>
+              <ul className="rt-watchlist">
+                {map.watchlist.map((w) => (
+                  <li key={w.id} className={w.severity}>
+                    <span className="mono rt-watch-sev">{w.severity === "fix" ? "worth fixing" : "deliberate"}</span>
+                    <div>
+                      <strong>{w.symptom}</strong>
+                      <div className="muted small">{w.detail}</div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
       )}
     </div>
+  );
+}
+
+/* ------------------------------------------------------------ rows */
+
+function RowView({
+  r,
+  map,
+  live,
+  editing,
+  open,
+  onToggle,
+  onChange,
+  onRemove,
+  onVerify,
+  onSteps,
+  onDead,
+  onWalk,
+}: {
+  r: ChannelRow;
+  map: RoutingMap;
+  live: ReturnType<typeof useRoutingLive>;
+  editing: boolean;
+  open: boolean;
+  onToggle: () => void;
+  onChange: (patch: { name?: string; port?: string; socket?: string; upstream?: string }) => void;
+  onRemove: () => void;
+  onVerify: () => void;
+  onSteps: (nodeId: string, steps: string[]) => void;
+  onDead: (nodeId: string, dead: boolean) => void;
+  onWalk: () => void;
+}) {
+  const n = node(map, r.nodeId)!;
+  const key = deskKeyFor(n);
+  const desk = live.desk?.connected ? live.desk : null;
+  const deskName = key && desk ? (desk.names[key] ?? "").trim() : "";
+  const muted = key && desk ? desk.mutes[key] === true : false;
+  const fader = key && desk ? desk.faders[key] : undefined;
+  const src = r.upstreamId ? node(map, r.upstreamId) : undefined;
+  const stale = !r.verified || live.now - r.verified > STALE_AFTER_MS;
+  const doorT = (r.door ? node(map, r.door)?.transport : "") ?? "";
+
+  return (
+    <>
+      <tr className={`rt-row ${open ? "open" : ""} ${src?.dead ? "dead" : ""}`} onClick={editing ? undefined : onToggle}>
+        <td className="n mono">{r.ch}</td>
+        <td>
+          {editing ? (
+            <input className="input rt-cell" value={r.name} placeholder={deskName || "name"} onChange={(e) => onChange({ name: e.target.value })} />
+          ) : (
+            <span className={r.name ? "" : "muted"}>{r.name || deskName || "—"}</span>
+          )}
+          {!editing && r.name && deskName && deskName !== r.name && <span className="rt-deskname muted small"> “{deskName}” on the desk</span>}
+        </td>
+        <td>
+          {editing ? (
+            <select className="input rt-cell" value={doorT} onChange={(e) => onChange({ port: e.target.value ? DOOR_LABELS[e.target.value as Transport] : "" })}>
+              {PORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          ) : r.doorLabel ? (
+            <span className={`rt-port ${doorT}`}>{r.doorLabel}</span>
+          ) : (
+            <span className="muted">not patched</span>
+          )}
+        </td>
+        <td className="n mono">
+          {editing ? <input className="input rt-cell rt-cell-n" value={r.socket} onChange={(e) => onChange({ socket: e.target.value })} /> : r.socket || "—"}
+          {!editing && r.twins.length > 0 && <span className="rt-twin" title={`Shares this socket — and its gain — with channel ${r.twins.join(", ")}`}>+{r.twins.join(",")}</span>}
+        </td>
+        <td>
+          {editing ? (
+            <input className="input rt-cell" value={r.upstream} placeholder="stage 41 · ULXD4Q-5-8 07 · MacBook 05" onChange={(e) => onChange({ upstream: e.target.value })} />
+          ) : (
+            <span className={r.upstream ? "" : "muted"}>
+              {r.upstream || "—"}
+              {src?.dead && <span className="rt-dead"> dead socket</span>}
+            </span>
+          )}
+        </td>
+        <td>
+          {key && desk ? (
+            muted ? (
+              <span className="rt-live bad">muted</span>
+            ) : (
+              <span className="rt-live ok">open{typeof fader === "number" && fader > -Infinity ? ` ${fader >= 0 ? "+" : "−"}${Math.abs(Math.round(fader))}` : ""}</span>
+            )
+          ) : (
+            <span className="muted">—</span>
+          )}
+        </td>
+        <td className={`n small ${stale ? "muted" : ""}`}>
+          {r.verified ? ageText(r.verified, live.now).replace("verified ", "") : "—"}
+          {editing && (
+            <button className="btn small ghost rt-verify" onClick={onVerify} title="I checked this row today">
+              ✓
+            </button>
+          )}
+        </td>
+        {editing && (
+          <td className="n">
+            <button className="rt-icon" onClick={onToggle} title="Steps for this channel">
+              …
+            </button>
+            <button className="rt-icon" onClick={onRemove} title="Remove channel">
+              ×
+            </button>
+          </td>
+        )}
+      </tr>
+      {open && (
+        <tr className="rt-detail">
+          <td colSpan={editing ? 8 : 7}>
+            <div className="rt-detail-grid">
+              {src && (
+                <StepsBox
+                  title={`When ${src.label} is the suspect`}
+                  steps={stepsFor(map, src)}
+                  own={!!src.steps?.length}
+                  editing={editing}
+                  onSave={(s) => onSteps(src.id, s)}
+                  extra={
+                    editing ? (
+                      <label className="rt-deadbox small">
+                        <input type="checkbox" checked={!!src.dead} onChange={(e) => onDead(src.id, e.target.checked)} /> Dead — looks normal, goes nowhere
+                      </label>
+                    ) : null
+                  }
+                />
+              )}
+              <StepsBox title={`When channel ${r.ch} is the suspect`} steps={stepsFor(map, n)} own={!!n.steps?.length} editing={editing} onSave={(s) => onSteps(n.id, s)} />
+              {!editing && (
+                <div className="rt-detail-actions">
+                  <button className="btn small primary" onClick={onWalk}>
+                    Walk this channel
+                  </button>
+                </div>
+              )}
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function StepsBox({
+  title,
+  steps,
+  own,
+  editing,
+  onSave,
+  extra,
+}: {
+  title: string;
+  steps: string[];
+  own: boolean;
+  editing: boolean;
+  onSave: (steps: string[]) => void;
+  extra?: React.ReactNode;
+}) {
+  const [text, setText] = useState(steps.join("\n"));
+  useEffect(() => setText(steps.join("\n")), [steps]);
+  return (
+    <div className="rt-stepsbox">
+      <div className="rt-stepsbox-head">
+        <strong>{title}</strong>
+        {!own && <span className="muted small"> · template for this kind{editing ? " — edit to make it yours" : ""}</span>}
+      </div>
+      {editing ? (
+        <>
+          <textarea
+            className="input routing-steps-edit"
+            rows={Math.max(3, steps.length + 1)}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={() => onSave(text.split("\n").map((s) => s.trim()).filter(Boolean))}
+          />
+          {extra}
+        </>
+      ) : (
+        <ol>
+          {steps.map((s, i) => (
+            <li key={i}>{s}</li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+function AddRow({ onAdd, taken }: { onAdd: (ch: string) => void; taken: string[] }) {
+  const [ch, setCh] = useState("");
+  const ok = /^\d+(\s*[-+–]\s*\d+)?$/.test(ch.trim()) && !taken.includes(ch.trim());
+  return (
+    <tr className="rt-add">
+      <td className="n">
+        <input className="input rt-cell rt-cell-n" placeholder="CH" value={ch} onChange={(e) => setCh(e.target.value)} onKeyDown={(e) => e.key === "Enter" && ok && (onAdd(ch.trim()), setCh(""))} />
+      </td>
+      <td colSpan={7}>
+        <button
+          className="btn small ghost"
+          disabled={!ok}
+          onClick={() => {
+            onAdd(ch.trim());
+            setCh("");
+          }}
+        >
+          Add channel
+        </button>
+        <span className="muted small"> — a number, or a stereo range like 11-12</span>
+      </td>
+    </tr>
   );
 }

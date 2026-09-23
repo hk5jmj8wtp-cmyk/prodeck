@@ -38,7 +38,7 @@ import { CrewSetlist } from "./CrewSetlist";
 import { CrewMySet } from "./CrewMySet";
 import { fileRuleFor } from "../pcoStore";
 
-export function CrewHome({ onGoChecklist }: { onGoChecklist?: () => void }) {
+export function CrewHome({ onGoChecklist, onGoWalk }: { onGoChecklist?: () => void; onGoWalk?: () => void }) {
   const pco = usePco();
   const chat = useChat();
   const cl = useChecklists();
@@ -444,6 +444,18 @@ export function CrewHome({ onGoChecklist }: { onGoChecklist?: () => void }) {
             )}
           </div>
         </div>
+      )}
+
+      {/* No sound? — the routing troubleshooter. Always present: the moment
+          it is needed is exactly the moment nobody can find the sheet. */}
+      {onGoWalk && (
+        <button className="crew-card edge crew-guide" onClick={onGoWalk}>
+          <span className="mono" style={{ color: "var(--accent-hi)" }}>
+            No sound?
+          </span>
+          <span className="crew-guide-line">Tap the person or channel — see what the booth checked, then where to walk</span>
+          <span className="crew-guide-go">Start →</span>
+        </button>
       )}
 
       {/* Checklist progress — only when there IS a checklist for this

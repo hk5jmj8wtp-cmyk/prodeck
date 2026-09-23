@@ -442,9 +442,14 @@ pub fn load_routing() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-pub fn save_routing(data: serde_json::Value) -> Result<(), String> {
+pub fn save_routing(data: serde_json::Value, app: tauri::AppHandle) -> Result<(), String> {
     let json = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
-    write_json_atomic_backed_up(routing_path(), json)
+    write_json_atomic_backed_up(routing_path(), json)?;
+    // Phones hold the map for the troubleshooter; a booth edit reaches them
+    // the same way a checklist edit does.
+    use tauri::Emitter;
+    app.emit("routing:changed", serde_json::json!({})).ok();
+    Ok(())
 }
 
 fn tracking_path() -> PathBuf {

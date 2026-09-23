@@ -706,6 +706,49 @@ The more specific the better: what you pressed, what you expected, what happened
     guide: "honest",
   },
 
+  // ------------------------------------------------------------------ routing
+  {
+    id: "routing-map",
+    group: "Sound console",
+    title: "Building your routing map",
+    aliases: ["routing", "patch list", "which channel is which socket", "signal map", "where does channel 39 come from", "paste patch list"],
+    body: `**Routing** is every console channel, traced back to the thing that makes the sound: the stage socket, the wireless pack, the playback laptop. It is written for the volunteer who has to answer "why is there no sound" alone.
+
+The one rule: **channel names change every service; numbers don't.** The map is keyed by numbers — console channel, door socket, receiver slot — and names arrive live from the desk. Who is singing into channel 39 comes from Planning Center.
+
+To build yours:
+1. Open **Routing**, press **Edit**, then **Paste patch list**.
+2. Paste one line per channel: **CH · NAME · PORT · SOCKET · UPSTREAM** — straight from a spreadsheet (tabs) or with commas. A header row is fine.
+3. **PORT** is the door the signal comes in through: SLink (a stage box), I/O Port 1 (Dante), Local (an XLR on the rack). **SOCKET** is the number on that door. **UPSTREAM** is what feeds the socket: \`stage 41\`, \`ULXD4Q-5-8 07\`, \`MacBook-Pro-2 05\`.
+4. Press **Apply**, look it over, **Save**.
+
+- Two channels on one socket (a vocal and its duplicate) show a **+** on the socket; they share one preamp and one gain.
+- Click a row for its steps — what to walk to when that channel is dead. Every kind of source starts with a sensible template; edit the text to name your building's receivers, panels and sockets.
+- Tick **Dead** on a socket that looks normal and goes nowhere. The walk routes around it.
+- **Mark all verified** stamps today's date on every row. The map nags after 90 days; maps rot.
+
+> Until you paste your own list, the page shows an example sixteen-channel church. It says so at the top.`,
+    related: ["routing-walk", "console"],
+  },
+  {
+    id: "routing-walk",
+    group: "Troubleshooting",
+    title: "When something has no sound",
+    aliases: ["no sound", "dead mic", "mic not working", "no signal from a vocal", "troubleshooter", "where do i look when a channel is dead"],
+    body: `On a phone, **Home → No sound?** On the booth, **Routing → No sound?**. Pick the person (this week's team, from their mic assignment), the channel, or the place with no sound.
+
+ProDeck then does two things, in this order:
+1. **Checks what it can see from the booth.** Is the channel muted or its fader down on the desk? Is the desk connected? Is signal reaching ProDeck's own input? Each is a ✓ or a ✗ — every ✓ is a place you don't have to walk to. A ✗ comes with the fix ("Unmute channel 39").
+2. **Lists what is left to walk to, most likely first.** Pack switched on, receiver RF light, battery, then the socket, then the door, then the desk. Where a rule explains a surprise — two channels share one gain, stereo pairs are odd/even — it appears right under the step.
+
+- Anything the church has flagged under **Things to watch** for that path shows first.
+- The footer says when the map was last verified. Old maps lie; tell the booth when a step was wrong.
+- Phones only read the map. The booth edits it.
+
+ProDeck never guesses here. If it can't see a hop, it says so and hands you the checklist for it.`,
+    related: ["routing-map", "audio-spl", "console"],
+  },
+
   // ----------------------------------------------------------------- security
   {
     id: "security-posture",

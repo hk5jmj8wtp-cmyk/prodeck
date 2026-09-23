@@ -191,6 +191,25 @@ map* (table + paste), *Drawing the map* (nodes), *When something has no
 sound* (using the walk), *Keeping the map verified*. `docs/ROUTING.md`
 mirrors them for GitHub readers.
 
+## Status
+
+- **Phase 1 built 2026-09-23** (unreleased): `src/lib/routing.ts` (model,
+  paste parser, migration, walk engine — 25 unit tests), `routingStore.tsx`
+  (load/save + live overlay: desk mirror in dB, `audio:channels`, subsystem
+  lights), `pages/Routing.tsx` (Channels table with edit/paste/steps/dead/
+  verify, "No sound?" tab), `components/RoutingWalk.tsx` (picker + walk,
+  shared), `mobile/CrewWalk.tsx` (Home → No sound?, More → No sound?).
+  Booth saves emit `routing:changed`; phones re-read. Help topics
+  `routing-map` and `routing-walk`; `docs/ROUTING.md` mirrors them.
+- Cornerstone's Bible is transcribed onto the booth's `routing.json`
+  (64 channels, 49 sources, 3 doors, 10 buses, 15 outputs, 8 destinations,
+  8 watchlist items) from a one-off script kept outside the repo at
+  `~/.prodeck/cornerstone-routing.json`. Awaiting Zach's verification pass.
+- Outputs are in the model and the walk (Places) already; the outputs
+  *table* and in-app watchlist/rules editing remain Phase 3.
+- One-tap verification from a phone needs a member-writable command
+  (phones are read-only viewers); deferred to Phase 3.
+
 ## Phases
 
 1. Model + migration + table view + CSV paste + walk engine + phone walk (inputs).

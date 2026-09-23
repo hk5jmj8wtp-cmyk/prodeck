@@ -50,6 +50,7 @@ import { AlertsProvider, useAlerts } from "./alertsStore";
 import { RelayProvider } from "./relayStore";
 import { UpdaterProvider, useUpdater } from "./updaterStore";
 import { ChecklistProvider, useChecklists } from "./checklistStore";
+import { RoutingProvider } from "./routingStore";
 import { LyricFollowProvider } from "./lyricFollow";
 import { DialogHost } from "./lib/dialogs";
 import { ChecklistsPage } from "./pages/Checklists";
@@ -634,6 +635,7 @@ export default function App() {
                 <LyricFollowProvider>
                   <ChecklistProvider>
                     <AlertsProvider>
+                      <RoutingProvider>
                       <ChatProvider>
                         <PagesProvider>
                          <ScheduleProvider>
@@ -651,6 +653,7 @@ export default function App() {
                          </ScheduleProvider>
                         </PagesProvider>
                       </ChatProvider>
+                      </RoutingProvider>
                     </AlertsProvider>
                   </ChecklistProvider>
                 </LyricFollowProvider>

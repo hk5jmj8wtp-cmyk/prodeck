@@ -8042,3 +8042,525 @@ select.input {
 .conn-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conn-actions { display: flex; gap: 6px; }
 @media (max-width: 560px) { .conn-list li { grid-template-columns: 10px 1fr auto; } .conn-detail { display: none; } }
+
+/* ---------------------------------------------------------------------
+   Routing — the patch table and the troubleshooter (design/ROUTING.md).
+   Numbers are mono and tabular; prose is sans. Doors are colour-coded the
+   way the Routing Bible drew them: amber SLink, blue Dante, green Local. */
+.routing-page {
+  max-width: 1080px;
+}
+.rt-tabs {
+  display: inline-flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+}
+.rt-tabs button {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.rt-tabs button.on {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.rt-note {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--text);
+}
+.rt-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.rt-toolbar .rt-age {
+  flex: 1;
+}
+.rt-age {
+  font-size: 12px;
+  color: var(--muted);
+}
+.rt-age.stale {
+  color: var(--warn);
+}
+.rt-paste-text {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12.5px;
+  margin: 10px 0;
+  white-space: pre;
+}
+.rt-paste-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.rt-table-card {
+  padding: 8px 6px;
+  overflow-x: auto;
+}
+.rt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.rt-table th {
+  text-align: left;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.rt-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  vertical-align: middle;
+}
+.rt-table .n {
+  text-align: right;
+  white-space: nowrap;
+}
+.rt-table .mono {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-variant-numeric: tabular-nums;
+}
+.rt-row {
+  cursor: pointer;
+}
+.rt-row:hover td,
+.rt-row.open td {
+  background: var(--panel-2, rgba(255, 255, 255, 0.04));
+}
+.rt-row.dead td {
+  color: var(--muted);
+}
+.rt-cell {
+  padding: 5px 8px;
+  font-size: 12.5px;
+  min-width: 90px;
+}
+.rt-cell-n {
+  min-width: 56px;
+  width: 64px;
+  text-align: right;
+}
+.rt-port {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  white-space: nowrap;
+}
+.rt-port.slink {
+  color: #c98a2b;
+  border-color: rgba(201, 138, 43, 0.5);
+  background: rgba(201, 138, 43, 0.1);
+}
+.rt-port.dante {
+  color: var(--accent-hi);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+.rt-port.local {
+  color: var(--good);
+  border-color: rgba(63, 207, 142, 0.45);
+  background: var(--good-soft);
+}
+.rt-twin {
+  margin-left: 6px;
+  font-size: 10.5px;
+  color: var(--warn);
+  cursor: help;
+}
+.rt-dead {
+  margin-left: 6px;
+  font-size: 10.5px;
+  color: var(--warn);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.rt-deskname {
+  display: block;
+  margin-top: 1px;
+}
+.rt-live {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.rt-live.ok {
+  color: var(--good);
+  background: var(--good-soft);
+}
+.rt-live.bad {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+.rt-verify {
+  margin-left: 6px;
+  padding: 1px 7px;
+}
+.rt-icon {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+.rt-icon:hover {
+  color: var(--text);
+}
+.rt-detail td {
+  background: var(--panel-2, rgba(255, 255, 255, 0.03));
+  padding: 12px 14px 14px;
+}
+.rt-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.rt-detail-actions {
+  grid-column: 1 / -1;
+}
+.rt-stepsbox ol {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+.rt-stepsbox li {
+  padding: 2px 0;
+}
+.rt-stepsbox-head {
+  font-size: 12.5px;
+}
+.rt-deadbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+.rt-add td {
+  border-bottom: none;
+}
+.rt-watchlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rt-watchlist li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  font-size: 13px;
+}
+.rt-watch-sev {
+  flex: 0 0 96px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  padding-top: 2px;
+  color: var(--warn);
+}
+.rt-watchlist li.know .rt-watch-sev {
+  color: var(--accent-hi);
+}
+@media (max-width: 720px) {
+  .rt-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* The walk — shared by the Routing page and the phone (.crew overrides
+   sizing below in mobile.css). */
+.rw {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.rw-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.rw-back {
+  background: none;
+  border: none;
+  color: var(--accent-hi);
+  font-size: 26px;
+  line-height: 1;
+  padding: 0 6px 0 0;
+  cursor: pointer;
+  min-width: 32px;
+}
+.rw-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.rw-subtitle {
+  font-size: 11.5px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  margin-top: 2px;
+}
+.rw-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.rw-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rw-check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: var(--panel-2, rgba(255, 255, 255, 0.04));
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+.rw-mark {
+  flex: 0 0 auto;
+  font-weight: 700;
+  width: 18px;
+  text-align: center;
+}
+.rw-check.ok .rw-mark {
+  color: var(--good);
+}
+.rw-check.bad {
+  background: var(--warn-soft);
+}
+.rw-check.bad .rw-mark {
+  color: var(--warn);
+}
+.rw-check.unknown {
+  color: var(--muted);
+}
+.rw-fix {
+  margin-top: 4px;
+  font-weight: 600;
+}
+.rw-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rw-step {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-soft);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.rw-step-num {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent-hi);
+  font-weight: 700;
+  font-size: 12.5px;
+}
+.rw-rule {
+  margin-top: 6px;
+  padding-left: 10px;
+  border-left: 2px solid var(--accent-line);
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.rw-watch {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--warn);
+  background: var(--warn-soft);
+}
+.rw-watch.know {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+.rw-watch-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--muted);
+}
+.rw-watch-symptom {
+  font-weight: 600;
+  margin-top: 2px;
+}
+.rw-watch p {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+.rw-allgood {
+  font-size: 13.5px;
+  color: var(--muted);
+}
+.rw-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
+  padding-top: 6px;
+  border-top: 1px solid var(--border-soft);
+}
+.rw-age.stale {
+  color: var(--warn);
+}
+.rw-link {
+  background: none;
+  border: none;
+  color: var(--accent-hi);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+.rw-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rw-seg {
+  display: inline-flex;
+  align-self: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+}
+.rw-seg button {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.rw-seg button.on {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.rw-search {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+}
+.rw-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 60vh;
+  overflow: auto;
+}
+.rw-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.rw-row:hover {
+  background: var(--panel-2, rgba(255, 255, 255, 0.04));
+  border-color: var(--border-soft);
+}
+.rw-row:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.rw-num {
+  flex: 0 0 34px;
+  text-align: right;
+  color: var(--muted);
+  font-size: 12px;
+}
+.rw-row-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.rw-sub {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.rw-go {
+  color: var(--muted);
+}
+.rw-chip {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.rw-chip.bad {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+.rw-empty {
+  color: var(--muted);
+  font-size: 13px;
+  padding: 8px 12px;
+}

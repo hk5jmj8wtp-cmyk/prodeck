@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { usePerms } from "../lib/perms";
 import { CrewNav, type CrewTab } from "./CrewNav";
+import { CrewWalk } from "./CrewWalk";
 import { CrewChat } from "./CrewChat";
 import { CrewJoin } from "./CrewJoin";
 import { CrewHome } from "./CrewHome";
@@ -23,6 +24,9 @@ import { onTrack, seekTrack, skipTrack, stopTrack, toggleTrack, trackSnapshot } 
 
 export function MobileShell() {
   const [tab, setTab] = useState<CrewTab>("home");
+  // "No sound?" is reached from Home (and More), not a sixth tab: the nav is
+  // five tabs by design and this is an occasional screen, not a daily one.
+  const [walk, setWalk] = useState(false);
   const [onboarding, setOnboarding] = useState(() => IS_WEB && shouldOnboard());
   const chat = useChat();
   // The overdue dot only counts lists this phone can actually see — an alert
@@ -112,7 +116,8 @@ export function MobileShell() {
         <ListenChip />
       </div>
       <main className="crew-main">
-        {tab === "home" && <CrewHome onGoChecklist={() => setTab("checklist")} />}
+        {tab === "home" && walk && <CrewWalk onBack={() => setWalk(false)} />}
+        {tab === "home" && !walk && <CrewHome onGoChecklist={() => setTab("checklist")} onGoWalk={() => setWalk(true)} />}
         {tab === "chat" && (
           <div className="crew-page crew-page-chat">
             <CrewChat />
@@ -121,9 +126,17 @@ export function MobileShell() {
         {tab === "checklist" && <CrewChecklist />}
         {tab === "dashboards" && <CrewDash />}
         {tab === "more" && leader && <CrewLeader />}
-        {tab === "more" && !leader && (
+        {tab === "more" && !leader && walk && <CrewWalk onBack={() => setWalk(false)} />}
+        {tab === "more" && !leader && !walk && (
           <div className="crew-page">
             <h1 className="crew-title">More</h1>
+            <button className="crew-card edge crew-guide" onClick={() => setWalk(true)}>
+              <span className="mono" style={{ color: "var(--accent-hi)" }}>
+                No sound?
+              </span>
+              <span className="crew-guide-line">Find the fault — what the booth already checked, then where to walk</span>
+              <span className="crew-guide-go">Start →</span>
+            </button>
             <PushCard />
             {/* In-app sounds: chat chime + vibration while the app is open.
                 Pages always ring regardless — they're the emergency channel. */}
@@ -197,6 +210,7 @@ export function MobileShell() {
         overdue={overdueCount > 0}
         onSelect={(t) => {
           setLeader(false); // leaving More closes the leader board
+          setWalk(false); // and any tab tap leaves the troubleshooter
           setTab(t);
         }}
       />
