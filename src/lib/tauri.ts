@@ -293,6 +293,8 @@ export interface Settings {
   gemini_api_key: string | null;
   assist_api_key: string | null;
   assist_model: string;
+  assist_provider: "anthropic" | "gemini";
+  assist_gemini_model: string;
   assist_workspace_id: string;
   assist_members: boolean;
   assist_monthly_cap: number;
@@ -686,6 +688,7 @@ export const geminiTest = () => invoke<string>("gemini_test");
 
 // ---- "Ask ProDeck" troubleshooter (design/TROUBLESHOOTER.md) ----------------
 export interface AssistStatus {
+  provider: "anthropic" | "gemini";
   configured: boolean;
   model: string;
   members: boolean;

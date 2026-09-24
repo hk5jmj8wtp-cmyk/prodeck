@@ -14,6 +14,7 @@ mod ga4;
 mod gemini;
 mod follow;
 mod assist;
+mod assist_gemini;
 mod midi;
 mod netmidi;
 mod ndi;

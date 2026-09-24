@@ -99,6 +99,8 @@ pub struct Settings {
     /// gateway strips it and pins it on browser round-trips.
     pub assist_api_key: Option<String>,
     pub assist_model: String,
+    pub assist_provider: String,
+    pub assist_gemini_model: String,
     /// Anthropic workspace id (wrkspc_…). Needed only for account-level keys,
     /// which the API refuses without it; a workspace-scoped key leaves it blank.
     pub assist_workspace_id: String,
@@ -275,6 +277,8 @@ impl Default for Settings {
             gemini_api_key: None,
             assist_api_key: None,
             assist_model: String::new(),
+            assist_provider: "anthropic".into(),
+            assist_gemini_model: String::new(),
             assist_workspace_id: String::new(),
             assist_members: true,
             assist_monthly_cap: 500,
