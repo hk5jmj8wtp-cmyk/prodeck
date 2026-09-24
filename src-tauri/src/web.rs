@@ -10,12 +10,12 @@ use base64::Engine;
 use include_dir::{include_dir, Dir};
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Listener, Manager, Emitter};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use crate::web_listener::GatewayListener;
 use tokio::sync::broadcast;
 
 // The Vite build output, embedded into the binary at compile time.
@@ -71,8 +71,7 @@ const FORWARD_EVENTS: &[&str] = &[
 ];
 
 pub struct WebInner {
-    pub running: AtomicBool,
-    pub port: AtomicU16,
+    listener: GatewayListener,
     pub tx: broadcast::Sender<String>,
     // Last frame per event (pp:status keyed by stream) so a browser that connects
     // after the host is already live receives the current state immediately.
@@ -84,8 +83,7 @@ impl WebInner {
     pub fn new() -> Self {
         let (tx, _rx) = broadcast::channel(1024);
         Self {
-            running: AtomicBool::new(false),
-            port: AtomicU16::new(0),
+            listener: GatewayListener::new(),
             tx,
             snapshot: Mutex::new(HashMap::new()),
             listeners_ready: AtomicBool::new(false),
@@ -274,52 +272,20 @@ fn ensure_listeners(app: &AppHandle, web: &WebState) {
     }
 }
 
-pub fn start(app: AppHandle, web: WebState, port: u16) {
-    if web.running.swap(true, Ordering::AcqRel) {
-        return; // already running
-    }
+pub async fn start(app: AppHandle, web: WebState, port: u16) -> Result<(), String> {
     ensure_listeners(&app, &web);
-    web.port.store(port, Ordering::Release);
-
-    tauri::async_runtime::spawn(async move {
-        // The previous server (after a port change) may hold the socket briefly.
-        let mut listener = None;
-        for _ in 0..6 {
-            match TcpListener::bind(("0.0.0.0", port)).await {
-                Ok(l) => {
-                    listener = Some(l);
-                    break;
-                }
-                Err(_) => tokio::time::sleep(Duration::from_millis(500)).await,
-            }
-        }
-        let listener = match listener {
-            Some(l) => l,
-            None => {
-                web.running.store(false, Ordering::Release);
-                crate::diag::log(format!("web gateway: could not bind port {port}"));
-                return;
-            }
-        };
-
-        while web.running.load(Ordering::Acquire) {
-            // Time-boxed accept so toggling off releases the port within ~1s.
-            match tokio::time::timeout(Duration::from_secs(1), listener.accept()).await {
-                Ok(Ok((stream, _addr))) => {
-                    let app2 = app.clone();
-                    let web2 = web.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let _ = handle_conn(stream, app2, web2).await;
-                    });
-                }
-                _ => continue,
-            }
-        }
-    });
+    let connections = web.clone();
+    web.listener.start(port, move |stream| {
+        let app = app.clone();
+        let web = connections.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = handle_conn(stream, app, web).await;
+        });
+    }).await
 }
 
-pub fn stop(web: &WebState) {
-    web.running.store(false, Ordering::Release);
+pub async fn stop(web: &WebState) {
+    web.listener.stop().await;
 }
 
 fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -1109,7 +1075,7 @@ async fn serve_sse(
                 }
             }
         }
-        if !web.running.load(Ordering::Acquire) {
+        if !web.listener.running.load(Ordering::Acquire) {
             break;
         }
     }
@@ -2239,25 +2205,48 @@ pub fn crew_join_state(settings: tauri::State<'_, SettingsState>) -> Value {
     })
 }
 
+/// Use the network interface and OS Bonjour name, never the editable booth label.
+fn lan_hosts() -> Vec<String> {
+    let mut hosts = Vec::new();
+    // UDP connect only selects a route; no packet is sent to this documentation address.
+    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
+        if socket.connect("192.0.2.1:9").is_ok() {
+            if let Ok(addr) = socket.local_addr() {
+                if !addr.ip().is_loopback() && !addr.ip().is_unspecified() {
+                    hosts.push(addr.ip().to_string());
+                }
+            }
+        }
+    }
+    #[cfg(target_os = "macos")]
+    if let Ok(output) = std::process::Command::new("/usr/sbin/scutil").args(["--get", "LocalHostName"]).output() {
+        let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if output.status.success() && !name.is_empty() {
+            hosts.push(format!("{name}.local"));
+        }
+    }
+    hosts
+}
+
 #[tauri::command]
 pub fn web_status(state: tauri::State<'_, WebState>) -> Value {
     json!({
-        "running": state.running.load(Ordering::Acquire),
-        "port": state.port.load(Ordering::Acquire),
+        "running": state.listener.running.load(Ordering::Acquire),
+        "port": state.listener.port.load(Ordering::Acquire),
+        "hosts": lan_hosts(),
     })
 }
 
 #[tauri::command]
-pub fn web_start(port: u16, app: AppHandle, state: tauri::State<'_, WebState>) {
-    if state.running.load(Ordering::Acquire) {
-        stop(&state);
-    }
-    start(app, state.inner().clone(), port);
+pub async fn web_start(port: u16, app: AppHandle, state: tauri::State<'_, WebState>) -> Result<(), String> {
+    if port == 0 { return Err("Choose a Browser Access port between 1 and 65535".into()); }
+    start(app, state.inner().clone(), port).await
 }
 
 #[tauri::command]
-pub fn web_stop(state: tauri::State<'_, WebState>) {
-    stop(&state);
+pub async fn web_stop(state: tauri::State<'_, WebState>) -> Result<(), String> {
+    stop(state.inner()).await;
+    Ok(())
 }
 
 #[cfg(test)]

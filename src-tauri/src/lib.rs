@@ -30,6 +30,7 @@ mod settings;
 mod tap;
 mod transcription;
 mod web;
+mod web_listener;
 mod x32;
 mod s31;
 
@@ -300,7 +301,12 @@ pub fn run() {
             }
             if let Some(port) = web_autostart {
                 let state = app.state::<web::WebState>().inner().clone();
-                web::start(app.handle().clone(), state, port);
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = web::start(handle, state, port).await {
+                        crate::diag::log(e);
+                    }
+                });
             }
             tap::spawn_heartbeat(app.handle().clone());
             avantis::spawn_mirror(app.handle().clone());

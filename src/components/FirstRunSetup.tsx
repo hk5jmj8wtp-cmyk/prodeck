@@ -1,3 +1,4 @@
+import { browserBaseUrl, lanBrowserUrls } from "../lib/webAccess";
 import { useEffect, useRef, useState } from "react";
 import { PcoConnect } from "./PcoConnect";
 import { useProDeck } from "../store";
@@ -7,11 +8,11 @@ import {
   updateSettings,
   pcoTest,
   webStart,
+  webStatus,
   webStop,
   avantisState,
   on,
   IS_WEB,
-  PUBLIC_URL,
   type Settings,
   pcoOauthStatus,
 } from "../lib/tauri";
@@ -150,12 +151,12 @@ function randomToken(bytes = 12): string {
   return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
 }
 /** Where phones on the church network reach this Mac. */
-function lanBase(s: Settings): string {
-  const pub = (s as any).public_url?.trim?.() as string | undefined;
-  if (pub) return pub.replace(/\/+$/, "");
-  if (PUBLIC_URL) return PUBLIC_URL.replace(/\/+$/, "");
-  const host = ((s as any).device_name || "this-mac").replace(/\.local$/i, "");
-  return `http://${host}.local:${(s as any).web_port || 8088}`;
+async function lanBase(s: Settings): Promise<string> {
+  if (s.public_url?.trim()) return browserBaseUrl(s.public_url, []);
+  const status = await webStatus();
+  const base = browserBaseUrl("", lanBrowserUrls(status.hosts, status.running ? status.port : s.web_port));
+  if (!base) throw new Error("Connect this Mac to Wi-Fi or Ethernet to create a crew link");
+  return base;
 }
 
 export function FirstRunSetup({ onNavigate }: { onNavigate?: (p: string) => void }) {
@@ -279,7 +280,7 @@ export function FirstRunSetup({ onNavigate }: { onNavigate?: (p: string) => void
           await updateSettings({ ...s, web_invite_token: token } as unknown as Settings);
           await refreshSettings();
         }
-        const url = `${lanBase(s)}/join`;
+        const url = `${await lanBase(s)}/join`;
         if (!alive) return;
         setJoinUrl(url);
         setJoinMsg("");

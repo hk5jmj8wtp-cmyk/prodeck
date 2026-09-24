@@ -1,3 +1,4 @@
+import { browserBaseUrl, lanBrowserUrls } from "../lib/webAccess";
 import { usePpConnection } from "../propresenterStore";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ANCHOR_TOPIC, openHelp } from "../help/nav";
@@ -38,6 +39,7 @@ import {
   updateSettings,
   webStart,
   webStatus,
+  type WebStatus,
   webStop,
   type Settings,
   type AvantisSoftkey,
@@ -146,9 +148,10 @@ export function SettingsPage() {
   const [audioInputs, setAudioInputs] = useState<string[]>([]);
   const [oscOn, setOscOn] = useState(false);
   const [status, setStatus] = useState("");
-  const [webInfo, setWebInfo] = useState<{ running: boolean; port: number }>({
+  const [webInfo, setWebInfo] = useState<WebStatus>({
     running: false,
     port: 0,
+    hosts: [],
   });
   // Browser clients receive ga4_key_path redacted, so including it here made
   // a working setup read as "off" everywhere except the booth.
@@ -206,7 +209,13 @@ export function SettingsPage() {
     listMidiInputs().then(setMidiPorts).catch(() => {});
     listMidiOutputs().then(setMidiOutPorts).catch(() => {});
     listAudioInputs().then(setAudioInputs).catch(() => {});
-    if (!IS_WEB) webStatus().then(setWebInfo).catch(() => {});
+    if (!IS_WEB) {
+      let active = true;
+      const refresh = () => webStatus().then((info) => { if (active) setWebInfo(info); }).catch(() => {});
+      refresh();
+      const timer = setInterval(refresh, 5000);
+      return () => { active = false; clearInterval(timer); };
+    }
   }, []);
 
   useEffect(() => {
@@ -232,7 +241,7 @@ export function SettingsPage() {
       // There was no catch here at all: a rejected save (a member-tier browser,
       // a disk error) left the button never flipping to "Saved ✓" with nothing
       // on screen — indistinguishable from a dead button.
-      setSaveErr(String(e));
+      setSaveErr(`Couldn't save your settings: ${String(e)}`);
       return;
     }
     await refreshSettings();
@@ -245,8 +254,10 @@ export function SettingsPage() {
         if (form.web_enabled && form.web_password) await webStart(form.web_port);
         else await webStop();
         setWebInfo(await webStatus());
-      } catch {
-        /* ignore */
+      } catch (e) {
+        setSaveErr(`Settings saved, but Browser Access could not be applied: ${String(e)}`);
+        setWebInfo(await webStatus().catch(() => ({ running: false, port: 0, hosts: [] })));
+        return;
       }
     }
     setSaved(true);
@@ -336,7 +347,7 @@ export function SettingsPage() {
 
       {saveErr && (
         <div className="banner">
-          Couldn't save your settings — {saveErr}
+          {saveErr}
           <button className="btn small" onClick={() => setSaveErr("")}>
             Dismiss
           </button>
@@ -492,10 +503,18 @@ export function SettingsPage() {
                   </span>
                 </li>
                 <li>
-                  <Dot s={form.web_enabled ? "ok" : "idle"} /><span className="conn-name">Browser access (phones &amp; kiosks)</span>
-                  <span className="muted small conn-detail">{form.web_enabled ? `port ${form.web_port}` : "off"}</span>
+                  <Dot s={webInfo.running ? "ok" : "idle"} /><span className="conn-name">Browser access (phones &amp; kiosks)</span>
+                  <span className="muted small conn-detail">{webInfo.running ? `port ${webInfo.port}` : "off"}</span>
                   <span className="conn-actions">
-                    <button className="btn small" onClick={async () => { await webStop().catch(() => {}); await webStart(form.web_port).catch(() => {}); }}>Restart</button>
+                    <button className="btn small" onClick={async () => {
+                      setSaveErr("");
+                      try {
+                        if (!settings?.web_enabled || !settings.web_password) throw new Error("Enable Browser Access, set an admin password, and Save first.");
+                        await webStop();
+                        await webStart(settings.web_port);
+                      } catch (e) { setSaveErr(String(e)); }
+                      setWebInfo(await webStatus());
+                    }}>Restart</button>
                   </span>
                 </li>
               </>
@@ -1517,7 +1536,7 @@ export function SettingsPage() {
             Serve the dashboards to phones, tablets, and laptops on the church network.
             They open this Mac's address in a browser and sign in with the password below.
           </p>
-          <CrewInviteLink form={form} set={set} />
+          <CrewInviteLink form={form} set={set} base={browserBaseUrl(form.public_url, lanBrowserUrls(webInfo.hosts, form.web_port))} />
           <AutoCheckin form={form} set={set} />
           <div className="settings-grid">
           <label className="field wide">
@@ -1566,10 +1585,12 @@ export function SettingsPage() {
             {form.web_enabled && form.web_password && (
               <div className="field wide">
                 <span>Open in a browser</span>
-                <code className="web-url">
-                  http://{(form.device_name || "this-mac").replace(/\.local$/i, "")}.local:
-                  {form.web_port}/
-                </code>
+                {lanBrowserUrls(webInfo.hosts, webInfo.running ? webInfo.port : form.web_port).map((url) => (
+                  <code className="web-url" key={url}>{url}/</code>
+                ))}
+                <span className="hint">Use these addresses on the same network. Keep ProDeck open on this Mac.</span>
+                {!webInfo.hosts.length && <span className="error">No network address found. Connect this Mac to Wi-Fi or Ethernet.</span>}
+                <span className="hint">On this Mac only: http://127.0.0.1:{webInfo.running ? webInfo.port : form.web_port}/</span>
               </div>
             )}
           </div>
@@ -1588,7 +1609,7 @@ export function SettingsPage() {
       {!IS_WEB && (
         <>
           <ReliabilityCard />
-          <KioskCard form={form} />
+          <KioskCard form={form} base={browserBaseUrl(form.public_url, lanBrowserUrls(webInfo.hosts, form.web_port))} />
           <BackupCard />
           <HelpCard />
         </>
@@ -2289,19 +2310,21 @@ function AutoCheckin({
 function CrewInviteLink({
   form,
   set,
+  base,
 }: {
   form: Settings;
+  base: string;
   set: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
 }) {
   const [qr, setQr] = useState("");
   const [copied, setCopied] = useState(false);
-  const link = form.web_invite_token
-    ? `${PUBLIC_URL}/?join=${form.web_invite_token}`
+  const link = form.web_invite_token && base
+    ? `${base}/?join=${encodeURIComponent(form.web_invite_token)}`
     : "";
   // The QR/poster encode the tokenless /join redirect, so a printed code
   // survives every rotation; the copyable text link stays on the raw token
   // (rotate to kill texted copies).
-  const posterLink = form.web_invite_token ? `${PUBLIC_URL}/join` : "";
+  const posterLink = form.web_invite_token && base ? `${base}/join` : "";
 
   useEffect(() => {
     if (!posterLink) return setQr("");
@@ -3021,7 +3044,7 @@ function ReliabilityCard() {
 }
 
 /** Kiosk screens: a ready-made URL + QR for an office TV, lobby screen, or switcher PC. */
-function KioskCard({ form }: { form: Settings }) {
+function KioskCard({ form, base }: { form: Settings; base: string }) {
   const [dashes, setDashes] = useState<{ name: string }[]>([]);
   const [name, setName] = useState("");
   const [qr, setQr] = useState("");
@@ -3037,8 +3060,7 @@ function KioskCard({ form }: { form: Settings }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const f = form as any;
   const token = f.web_member_password || "";
-  const base = (f.public_url?.trim?.() as string) || `http://${(f.device_name || "this-mac").replace(/\.local$/i, "")}.local:${f.web_port || 8088}`;
-  const url = name && token ? `${base.replace(/\/+$/, "")}/?kiosk=${encodeURIComponent(name)}&token=${encodeURIComponent(token)}` : "";
+  const url = name && token && base ? `${base.replace(/\/+$/, "")}/?kiosk=${encodeURIComponent(name)}&token=${encodeURIComponent(token)}` : "";
   useEffect(() => {
     if (!url) return setQr("");
     QRCode.toDataURL(url, { margin: 1, width: 180 }).then(setQr).catch(() => setQr(""));
@@ -3055,6 +3077,8 @@ function KioskCard({ form }: { form: Settings }) {
       </p>
       {!f.web_enabled ? (
         <p className="hint">Turn on <strong>Browser Access</strong> above first — kiosks connect through it.</p>
+      ) : !base ? (
+        <p className="hint">Connect this Mac to the network to create kiosk links.</p>
       ) : !token ? (
         <p className="hint">Set a <strong>member password</strong> in Browser Access — kiosk links use it.</p>
       ) : (
