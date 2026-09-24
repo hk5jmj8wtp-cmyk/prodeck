@@ -328,6 +328,7 @@ export interface Settings {
   avantis_model: string;
   /** TCP port — 51325 for Avantis / dLive MixRack / SQ, 51328 for a dLive Surface. */
   avantis_port: number;
+  s31_feedback_port: number;
   avantis_midi_base: number;
   avantis_scene_labels: Record<string, string>;
   avantis_waves_on_scene: number;
@@ -371,6 +372,8 @@ export interface AvantisSnapshot {
   muteSeen?: Record<string, number>;
   connectedAt?: number | null;
   faders: Record<string, number>;
+  /** Native dB levels, when supplied by the console. */
+  faderDb?: Record<string, number>;
   names: Record<string, string>;
   colors: Record<string, number>;
 }
@@ -394,8 +397,8 @@ export const avantisSetMute = (id: string, muted: boolean) =>
   invoke<void>("avantis_set_mute", { id, muted });
 export const avantisRecallScene = (scene: number) =>
   invoke<void>("avantis_recall_scene", { scene });
-export const avantisSetFader = (id: string, value: number) =>
-  invoke<void>("avantis_set_fader", { id, value });
+export const avantisSetFader = (id: string, value: number, db?: number) =>
+  invoke<void>("avantis_set_fader", { id, value, db });
 export const avantisSetName = (id: string, name: string) =>
   invoke<void>("avantis_set_name", { id, name });
 

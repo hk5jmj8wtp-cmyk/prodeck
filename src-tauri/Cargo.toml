@@ -63,3 +63,6 @@ p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
 # Network MIDI session keeper (netmidi.rs) — already in the tree via midir.
 coremidi-sys = "3"
 core-foundation-sys = "0.8"
+
+[dev-dependencies]
+tauri = { version = "2", features = ["test"] }

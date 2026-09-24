@@ -594,11 +594,12 @@ This is the most involved optional setup. The Adopter's Guide covers it end to e
     id: "console",
     group: "Sound console",
     title: "Connecting a sound console",
-    aliases: ["avantis", "dlive", "sq5", "x32", "m32", "console shows disconnected", "midi over tcp", "osc port 10023"],
+    aliases: ["avantis", "dlive", "sq5", "x32", "m32", "digico", "s31", "console shows disconnected", "midi over tcp", "osc port 10023"],
     body: `**Settings → Sound Console**: pick the model, type the console's IP, and watch it connect.
 
 - **Allen & Heath Avantis / dLive / SQ** — MIDI over TCP. Avantis and dLive use port 51325 (dLive Surface: 51328). Match the **MIDI base channel** to the console's *Utility → Control → MIDI* setting.
 - **Behringer X32 / Midas M32** — OSC, port 10023. Nothing to configure on the console.
+- **DiGiCo S31 (experimental)** — firmware 3+, general-purpose OSC. In *Extensions → OSC Control*, enable OSC and match the console Receive Port to ProDeck's console UDP port (suggested 8000). Add this computer's IP as the active controller; set its Send Port to ProDeck's feedback port (suggested 8001), with Send and Receive enabled. Only one OSC controller can be active. Keep default addresses and ranges: boolean mutes, faders in dB, no normalization/inversion. Press *Resend All*. Check channel numbers in *OSC Commands → Help*: inputs 1–60, busses 70–93 (shown as Bus 1–24), matrices 100–107, control groups 110–119, master 120. Aux/group mode changes do not change a bus's number. Only channels reported by the desk appear. Control supports mute, fader, names and snapshot rows 1–500. Colours/meters are not supported; verify on your desk before service use.
 
 Once connected, the **Sound Desk** widget mirrors mutes, faders and names, and the desk watchdog can page one person when something changes during a service. Control (mute, fader, scene recall) needs the admin password.
 

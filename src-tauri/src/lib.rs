@@ -31,6 +31,7 @@ mod tap;
 mod transcription;
 mod web;
 mod x32;
+mod s31;
 
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
@@ -280,6 +281,7 @@ pub fn run() {
         .manage(Arc::new(posfiles::PosFilesInner::load()) as posfiles::PosFilesState)
         .manage(Arc::new(identity::IdentityInner::load()) as identity::IdentityState)
         .manage(Arc::new(Mutex::new(avantis::AvantisInner::default())) as avantis::AvantisState)
+        .manage(s31::S31State::default())
         .manage(ga4::new_state())
         .setup(move |app| {
             // So a Planning Center token refresh that fails in the background
@@ -305,6 +307,7 @@ pub fn run() {
             avantis::spawn_watch_flush(app.handle().clone());
             obs::spawn_client(app.handle().clone());
             x32::spawn_mirror(app.handle().clone());
+            s31::spawn_mirror(app.handle().clone());
             edge::spawn_edge_push(app.handle().clone());
             ga4::spawn_ga4_poll(app.handle().clone());
             propresenter::spawn_lobby_auto(app.handle().clone());
