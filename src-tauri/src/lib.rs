@@ -14,6 +14,7 @@ mod ga4;
 mod gemini;
 mod follow;
 mod assist;
+mod assist_gemini;
 mod midi;
 mod netmidi;
 mod ndi;
@@ -30,6 +31,7 @@ mod settings;
 mod tap;
 mod transcription;
 mod web;
+mod web_listener;
 mod x32;
 mod s31;
 
@@ -259,6 +261,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(Arc::new(AsyncMutex::new(None::<propresenter::ProPresenterConnection>))
             as propresenter::ProPresenterState)
+        .manage(propresenter::ProPresenter2State::default())
         .manage(Arc::new(AsyncMutex::new(ndi::NdiManager::new())) as ndi::NdiState)
         .manage(Arc::new(AsyncMutex::new(relay::RelayManager::new())) as relay::RelayState)
         .manage(Mutex::new(loaded_settings) as settings::SettingsState)
@@ -299,7 +302,12 @@ pub fn run() {
             }
             if let Some(port) = web_autostart {
                 let state = app.state::<web::WebState>().inner().clone();
-                web::start(app.handle().clone(), state, port);
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = web::start(handle, state, port).await {
+                        crate::diag::log(e);
+                    }
+                });
             }
             tap::spawn_heartbeat(app.handle().clone());
             avantis::spawn_mirror(app.handle().clone());

@@ -7,7 +7,7 @@
 //
 // Spec: design/TROUBLESHOOTER.md.
 
-use crate::settings::{config_dir, SettingsState};
+use crate::settings::{config_dir, Settings, SettingsState};
 use serde_json::{json, Value};
 use std::io::Write;
 use std::sync::Mutex;
@@ -60,7 +60,12 @@ fn load_usage() -> (String, u32) {
     let u = std::fs::read_to_string(usage_path())
         .ok()
         .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-        .and_then(|v| Some((v.get("month")?.as_str()?.to_string(), v.get("calls")?.as_u64()? as u32)))
+        .and_then(|v| {
+            Some((
+                v.get("month")?.as_str()?.to_string(),
+                v.get("calls")?.as_u64()? as u32,
+            ))
+        })
         .unwrap_or((month_key(), 0));
     *g = Some(u.clone());
     u
@@ -69,33 +74,91 @@ fn load_usage() -> (String, u32) {
 fn bump_usage() -> u32 {
     let (m, n) = load_usage();
     let now = month_key();
-    let next = if m == now { (now.clone(), n + 1) } else { (now.clone(), 1) };
+    let next = if m == now {
+        (now.clone(), n + 1)
+    } else {
+        (now.clone(), 1)
+    };
     *USAGE.lock().unwrap_or_else(|p| p.into_inner()) = Some(next.clone());
-    let _ = std::fs::write(usage_path(), json!({ "month": next.0, "calls": next.1 }).to_string());
+    let _ = std::fs::write(
+        usage_path(),
+        json!({ "month": next.0, "calls": next.1 }).to_string(),
+    );
     next.1
 }
 
-pub(crate) fn key_model_cap(settings: &SettingsState) -> Result<(String, String, u32, bool, String), String> {
+pub(crate) fn key_model_cap(
+    settings: &SettingsState,
+) -> Result<(String, String, u32, bool, String), String> {
     let s = settings.lock().unwrap_or_else(|p| p.into_inner());
     let key = match s.assist_api_key.clone() {
         Some(k) if !k.trim().is_empty() => k.trim().to_string(),
         _ => return Err("The troubleshooter isn't set up: add an Anthropic API key in Settings → Troubleshooter.".into()),
     };
-    let model = if s.assist_model.trim().is_empty() { DEFAULT_MODEL.to_string() } else { s.assist_model.trim().to_string() };
-    Ok((key, model, s.assist_monthly_cap, s.assist_members, s.assist_workspace_id.trim().to_string()))
+    let model = if s.assist_model.trim().is_empty() {
+        DEFAULT_MODEL.to_string()
+    } else {
+        s.assist_model.trim().to_string()
+    };
+    Ok((
+        key,
+        model,
+        s.assist_monthly_cap,
+        s.assist_members,
+        s.assist_workspace_id.trim().to_string(),
+    ))
+}
+
+struct AssistConfig {
+    provider: &'static str,
+    key: String,
+    model: String,
+    cap: u32,
+    workspace: String,
+}
+
+fn config(s: &Settings) -> Result<AssistConfig, String> {
+    let (provider, key, model, default) = match s.assist_provider.as_str() {
+        "" | "anthropic" => (
+            "anthropic",
+            &s.assist_api_key,
+            &s.assist_model,
+            DEFAULT_MODEL,
+        ),
+        "gemini" => (
+            "gemini",
+            &s.gemini_api_key,
+            &s.assist_gemini_model,
+            crate::assist_gemini::DEFAULT_MODEL,
+        ),
+        _ => return Err("Choose Claude or Gemini in Settings → Troubleshooter.".into()),
+    };
+    Ok(AssistConfig {
+        provider,
+        key: key.as_deref().unwrap_or("").trim().to_string(),
+        model: if model.trim().is_empty() {
+            default.into()
+        } else {
+            model.trim().into()
+        },
+        cap: s.assist_monthly_cap,
+        workspace: s.assist_workspace_id.trim().into(),
+    })
 }
 
 /// Configured? Which model? How much used? Safe for any tier (no secret).
 pub(crate) fn status_core(settings: &SettingsState) -> Value {
-    let (configured, model, cap, members) = {
+    let (selected, members) = {
         let s = settings.lock().unwrap_or_else(|p| p.into_inner());
-        (
-            s.assist_api_key.as_deref().map(|k| !k.trim().is_empty()).unwrap_or(false),
-            if s.assist_model.trim().is_empty() { DEFAULT_MODEL.to_string() } else { s.assist_model.clone() },
-            s.assist_monthly_cap,
-            s.assist_members,
-        )
+        (config(&s), s.assist_members)
     };
+    let configured = selected
+        .as_ref()
+        .map(|c| !c.key.is_empty())
+        .unwrap_or(false);
+    let provider = selected.as_ref().map(|c| c.provider).unwrap_or("unknown");
+    let model = selected.as_ref().map(|c| c.model.as_str()).unwrap_or("");
+    let cap = selected.as_ref().map(|c| c.cap).unwrap_or(0);
     let (m, n) = load_usage();
     let used = if m == month_key() { n } else { 0 };
     let files: Vec<String> = std::fs::read_dir(knowledge_dir())
@@ -111,6 +174,7 @@ pub(crate) fn status_core(settings: &SettingsState) -> Value {
         .unwrap_or_default();
     json!({
         "configured": configured,
+        "provider": provider,
         "model": model,
         "members": members,
         "usedThisMonth": used,
@@ -124,11 +188,19 @@ pub(crate) fn status_core(settings: &SettingsState) -> Value {
 pub(crate) fn knowledge_core() -> Vec<Value> {
     let mut out = Vec::new();
     let mut total = 0usize;
-    let Ok(rd) = std::fs::read_dir(knowledge_dir()) else { return out };
-    let mut names: Vec<std::path::PathBuf> = rd.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.extension().map(|x| x == "md").unwrap_or(false)).collect();
+    let Ok(rd) = std::fs::read_dir(knowledge_dir()) else {
+        return out;
+    };
+    let mut names: Vec<std::path::PathBuf> = rd
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().map(|x| x == "md").unwrap_or(false))
+        .collect();
     names.sort();
     for p in names {
-        let Ok(text) = std::fs::read_to_string(&p) else { continue };
+        let Ok(text) = std::fs::read_to_string(&p) else {
+            continue;
+        };
         let take = KNOWLEDGE_CAP_CHARS.saturating_sub(total);
         if take == 0 {
             break;
@@ -143,7 +215,12 @@ pub(crate) fn knowledge_core() -> Vec<Value> {
 pub(crate) fn readable_error(status: u16, body: &str) -> String {
     let msg = serde_json::from_str::<Value>(body)
         .ok()
-        .and_then(|v| v.get("error")?.get("message")?.as_str().map(|s| s.to_string()))
+        .and_then(|v| {
+            v.get("error")?
+                .get("message")?
+                .as_str()
+                .map(|s| s.to_string())
+        })
         .unwrap_or_else(|| body.chars().take(200).collect());
     match status {
         401 | 403 => format!("The Anthropic key was rejected ({status}). Check it in Settings → Troubleshooter."),
@@ -158,38 +235,73 @@ pub(crate) fn readable_error(status: u16, body: &str) -> String {
 /// One Messages API call. `body` is the frontend's request (system, messages,
 /// tools, tool_choice); the booth sets the model, caps max_tokens, adds the
 /// key, enforces the monthly cap, and logs the exchange.
-pub(crate) async fn complete_core(settings: &SettingsState, mut body: Value, who: &str) -> Result<Value, String> {
-    let (key, model, cap, _members, workspace) = key_model_cap(settings)?;
+pub(crate) async fn complete_core(
+    settings: &SettingsState,
+    mut body: Value,
+    who: &str,
+) -> Result<Value, String> {
+    let selected = config(&settings.lock().unwrap_or_else(|p| p.into_inner()))?;
+    let AssistConfig {
+        provider,
+        key,
+        model,
+        cap,
+        workspace,
+    } = selected;
+    if key.is_empty() {
+        let name = if provider == "gemini" {
+            "Gemini"
+        } else {
+            "Anthropic"
+        };
+        return Err(format!(
+            "Add a {name} API key in Settings → Troubleshooter to use Ask ProDeck."
+        ));
+    }
     let (m, n) = load_usage();
     if cap > 0 && m == month_key() && n >= cap {
         return Err(format!("The troubleshooter has used its {cap} calls for this month. Raise the cap in Settings → Troubleshooter."));
     }
     let obj = body.as_object_mut().ok_or("request must be an object")?;
     obj.insert("model".into(), json!(model));
-    let max = obj.get("max_tokens").and_then(|v| v.as_u64()).unwrap_or(MAX_OUTPUT_TOKENS).min(MAX_OUTPUT_TOKENS);
+    let max = obj
+        .get("max_tokens")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(MAX_OUTPUT_TOKENS)
+        .min(MAX_OUTPUT_TOKENS);
     obj.insert("max_tokens".into(), json!(max));
     obj.remove("stream");
 
-    let client = reqwest::Client::builder().timeout(Duration::from_secs(75)).build().map_err(|e| e.to_string())?;
-    let mut req = client
-        .post(ENDPOINT)
-        .header("x-api-key", &key)
-        .header("anthropic-version", API_VERSION)
-        .header("content-type", "application/json");
-    if !workspace.is_empty() {
-        req = req.header("anthropic-workspace-id", &workspace);
-    }
-    let resp = req
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| if e.is_timeout() { "Anthropic didn't answer in time. Try again.".to_string() } else { format!("Couldn't reach Anthropic: {e}") })?;
-    let status = resp.status().as_u16();
-    let text = resp.text().await.map_err(|e| e.to_string())?;
-    if status >= 400 {
-        return Err(readable_error(status, &text));
-    }
-    let out: Value = serde_json::from_str(&text).map_err(|e| format!("bad reply from Anthropic: {e}"))?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(75))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let out = if provider == "gemini" {
+        crate::assist_gemini::complete(&client, &key, &model, &body).await?
+    } else {
+        let mut req = client
+            .post(ENDPOINT)
+            .header("x-api-key", &key)
+            .header("anthropic-version", API_VERSION)
+            .header("content-type", "application/json");
+        if !workspace.is_empty() {
+            req = req.header("anthropic-workspace-id", &workspace);
+        }
+        let resp = req.json(&body).send().await.map_err(|e| {
+            if e.is_timeout() {
+                "Anthropic didn't answer in time. Try again.".to_string()
+            } else {
+                format!("Couldn't reach Anthropic: {e}")
+            }
+        })?;
+        let status = resp.status().as_u16();
+        let text = resp.text().await.map_err(|e| e.to_string())?;
+        if status >= 400 {
+            return Err(readable_error(status, &text));
+        }
+        serde_json::from_str::<Value>(&text)
+            .map_err(|e| format!("bad reply from Anthropic: {e}"))?
+    };
     let calls = bump_usage();
 
     // Log: who asked, the last user text, what came back (text + tool calls),
@@ -197,12 +309,25 @@ pub(crate) async fn complete_core(settings: &SettingsState, mut body: Value, who
     let last_user = body
         .get("messages")
         .and_then(|m| m.as_array())
-        .and_then(|a| a.iter().rev().find(|m| m.get("role").and_then(|r| r.as_str()) == Some("user")))
+        .and_then(|a| {
+            a.iter()
+                .rev()
+                .find(|m| m.get("role").and_then(|r| r.as_str()) == Some("user"))
+        })
         .map(|m| match m.get("content") {
             Some(Value::String(s)) => s.chars().take(400).collect::<String>(),
             Some(Value::Array(parts)) => parts
                 .iter()
-                .filter_map(|p| p.get("text").and_then(|t| t.as_str()).map(|t| t.chars().take(200).collect::<String>()).or_else(|| p.get("type").and_then(|t| t.as_str()).map(|t| format!("<{t}>"))))
+                .filter_map(|p| {
+                    p.get("text")
+                        .and_then(|t| t.as_str())
+                        .map(|t| t.chars().take(200).collect::<String>())
+                        .or_else(|| {
+                            p.get("type")
+                                .and_then(|t| t.as_str())
+                                .map(|t| format!("<{t}>"))
+                        })
+                })
                 .collect::<Vec<_>>()
                 .join(" | "),
             _ => String::new(),
@@ -214,8 +339,23 @@ pub(crate) async fn complete_core(settings: &SettingsState, mut body: Value, who
         .map(|a| {
             a.iter()
                 .map(|b| match b.get("type").and_then(|t| t.as_str()) {
-                    Some("text") => b.get("text").and_then(|t| t.as_str()).unwrap_or("").chars().take(600).collect(),
-                    Some("tool_use") => format!("<tool {}({})>", b.get("name").and_then(|t| t.as_str()).unwrap_or("?"), b.get("input").map(|i| i.to_string()).unwrap_or_default().chars().take(120).collect::<String>()),
+                    Some("text") => b
+                        .get("text")
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("")
+                        .chars()
+                        .take(600)
+                        .collect(),
+                    Some("tool_use") => format!(
+                        "<tool {}({})>",
+                        b.get("name").and_then(|t| t.as_str()).unwrap_or("?"),
+                        b.get("input")
+                            .map(|i| i.to_string())
+                            .unwrap_or_default()
+                            .chars()
+                            .take(120)
+                            .collect::<String>()
+                    ),
                     _ => String::new(),
                 })
                 .collect()
@@ -224,13 +364,18 @@ pub(crate) async fn complete_core(settings: &SettingsState, mut body: Value, who
     let line = json!({
         "at": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0),
         "who": who,
+        "provider": provider,
         "model": model,
         "user": last_user,
         "reply": reply,
         "usage": out.get("usage").cloned().unwrap_or(Value::Null),
         "callsThisMonth": calls,
     });
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(log_path()) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path())
+    {
         let _ = writeln!(f, "{line}");
     }
     Ok(out)
@@ -238,8 +383,15 @@ pub(crate) async fn complete_core(settings: &SettingsState, mut body: Value, who
 
 /// Last N log lines, newest first — for Settings → Troubleshooter.
 pub(crate) fn log_tail_core(n: usize) -> Vec<Value> {
-    let Ok(text) = std::fs::read_to_string(log_path()) else { return Vec::new() };
-    let mut out: Vec<Value> = text.lines().rev().take(n).filter_map(|l| serde_json::from_str(l).ok()).collect();
+    let Ok(text) = std::fs::read_to_string(log_path()) else {
+        return Vec::new();
+    };
+    let mut out: Vec<Value> = text
+        .lines()
+        .rev()
+        .take(n)
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect();
     out.truncate(n);
     out
 }
@@ -247,7 +399,10 @@ pub(crate) fn log_tail_core(n: usize) -> Vec<Value> {
 // ---- Tauri commands (desktop) ---------------------------------------------
 
 #[tauri::command]
-pub async fn assist_complete(body: Value, settings: tauri::State<'_, SettingsState>) -> Result<Value, String> {
+pub async fn assist_complete(
+    body: Value,
+    settings: tauri::State<'_, SettingsState>,
+) -> Result<Value, String> {
     complete_core(settings.inner(), body, "booth").await
 }
 
@@ -280,4 +435,41 @@ pub fn assist_knowledge_dir() -> Result<String, String> {
         );
     }
     Ok(dir.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod provider_tests {
+    use super::*;
+    #[test]
+    fn old_settings_keep_claude_and_provider_switch_keeps_independent_models() {
+        let mut s: Settings = serde_json::from_value(
+            json!({"assist_api_key":"claude-test", "assist_model":"claude-custom"}),
+        )
+        .unwrap();
+        assert_eq!(config(&s).unwrap().provider, "anthropic");
+        assert_eq!(config(&s).unwrap().model, "claude-custom");
+        s.assist_provider = "gemini".into();
+        assert!(config(&s).unwrap().key.is_empty()); // Never send a Claude key to Google.
+        s.gemini_api_key = Some(" google-test ".into());
+        assert_eq!(config(&s).unwrap().key, "google-test");
+        assert_eq!(
+            config(&s).unwrap().model,
+            crate::assist_gemini::DEFAULT_MODEL
+        );
+        s.assist_gemini_model = "gemini-custom".into();
+        assert_eq!(config(&s).unwrap().model, "gemini-custom");
+        s.assist_provider = "anthropic".into();
+        assert_eq!(config(&s).unwrap().key, "claude-test");
+        assert_eq!(config(&s).unwrap().model, "claude-custom");
+    }
+    #[test]
+    fn auto_follow_still_uses_its_anthropic_key_with_gemini_selected_for_ask() {
+        let s = Mutex::new(Settings {
+            assist_provider: "gemini".into(),
+            assist_api_key: Some("claude-test".into()),
+            gemini_api_key: Some("google-test".into()),
+            ..Settings::default()
+        });
+        assert_eq!(key_model_cap(&s).unwrap().0, "claude-test");
+    }
 }

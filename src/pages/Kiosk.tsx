@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { startListen, stopListen } from "../lib/listen";
 import GridLayout, { WidthProvider, type Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
-import { useProDeck } from "../store";
+import { usePpConnection } from "../propresenterStore";
+import { widgetTitle, dashboardPpInstances } from "../lib/ppWidgets";
 import { WIDGET_MAP } from "../widgets/registry";
 import { loadDashboards, type Dashboard as Dash } from "../lib/dashboards";
 
@@ -23,7 +24,8 @@ const PING_MS = 5_000;
  * the page after an outage so the screen never runs a stale frontend.
  */
 export function KioskPage({ name }: { name: string }) {
-  const { connected } = useProDeck();
+  const primary = usePpConnection(1);
+  const secondary = usePpConnection(2);
   const [dashboards, setDashboards] = useState<Dash[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [offlineSince, setOfflineSince] = useState<number | null>(null);
@@ -53,7 +55,11 @@ export function KioskPage({ name }: { name: string }) {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
-  const dashForFit = dashboards.find((d) => d.name.toLowerCase() === name.toLowerCase());
+  const dashForFit = dashboards.find((d) => d.name.toLowerCase() === name.toLowerCase() || d.id === name);
+  const offlineSources = dashboardPpInstances(dashForFit?.widgets ?? []).filter(
+    (instance) => !(instance === 2 ? secondary.connected : primary.connected),
+  );
+  const connected = offlineSources.length === 0;
   const rowHeight = useMemo(() => {
     const rows = Math.max(1, ...(dashForFit?.widgets ?? []).map((w) => w.y + w.h));
     const margin = 14;
@@ -151,7 +157,7 @@ export function KioskPage({ name }: { name: string }) {
   return (
     <div className="kiosk">
       {!connected && (
-        <div className="kiosk-ppbanner">ProPresenter offline — widgets are idle</div>
+        <div className="kiosk-ppbanner">{offlineSources.map((n) => n === 2 ? "propresenter 2" : "ProPresenter").join(" and ")} offline — its widgets are idle</div>
       )}
       <Grid
         className="layout"
@@ -179,7 +185,7 @@ export function KioskPage({ name }: { name: string }) {
           return (
             <div key={w.id} className="widget">
               <div className="widget-bar">
-                <span className="widget-title">{def.label}</span>
+                <span className="widget-title">{widgetTitle(def.label, w)}</span>
               </div>
               <div className="widget-body">
                 <Comp widget={w} editing={false} update={() => {}} />

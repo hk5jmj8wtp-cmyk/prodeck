@@ -258,6 +258,9 @@ export interface Settings {
   pp_host: string;
   pp_port: number;
   pp_auto_connect: boolean;
+  pp2_host: string;
+  pp2_port: number;
+  pp2_auto_connect: boolean;
   audio_input: string | null;
   whisper_bin: string | null;
   whisper_model: string | null;
@@ -290,6 +293,8 @@ export interface Settings {
   gemini_api_key: string | null;
   assist_api_key: string | null;
   assist_model: string;
+  assist_provider: "anthropic" | "gemini";
+  assist_gemini_model: string;
   assist_workspace_id: string;
   assist_members: boolean;
   assist_monthly_cap: number;
@@ -339,6 +344,9 @@ export interface Settings {
   lobby_auto_playlist: string;
   lobby_auto_index: number;
   lobby_auto_name: string;
+  pp2_lobby_auto_playlist: string;
+  pp2_lobby_auto_index: number;
+  pp2_lobby_auto_name: string;
   /** Auto check-in geolocation fence: building coordinates + radius (m).
    *  Blank coordinates = geo path off; the wifi/IP path is always on. */
   church_lat: string;
@@ -421,65 +429,6 @@ export type Json = Record<string, any>;
 // ProPresenter
 // ---------------------------------------------------------------------------
 
-export const ppConnect = (config: ProPresenterConfig) =>
-  invoke<Json>("pp_connect", { config });
-export const ppDisconnect = () => invoke<void>("pp_disconnect");
-export const ppIsConnected = () => invoke<boolean>("pp_is_connected");
-export const ppGet = (path: string) => invoke<Json>("pp_get", { path });
-export const ppPut = (path: string, body?: unknown) =>
-  invoke<void>("pp_put", { path, body });
-// Messages carry token values, so triggering one is a PUT-with-body (unlike
-// other triggers, which are GET). Routed through the control-failure toast.
-export const ppTriggerMessage = (id: string) =>
-  ctrl(invoke<void>("pp_put", { path: `message/${encodeURIComponent(id)}/trigger`, body: [] }));
-// ProPresenter trigger/clear actions are GET (a PUT 404s). Use this for every
-// "do it now" action (slide trigger, prop/clear, next/previous, …).
-export const ppAction = (path: string) => ctrl(invoke<void>("pp_action", { path }));
-// Trigger a slide the way an operator's click does — so the slide's attached
-// ACTIONS fire too (audience Look, macros, clears). The bare
-// presentation/{uuid}/{index}/trigger puts up the slide but, depending on how the
-// action is attached, may not fire it; focusing the presentation first and then
-// triggering the FOCUSED cue mirrors a UI click and reliably fires the actions
-// (this is what ProDeck does). Falls back to a bare trigger if focus fails so a
-// slide always at least goes live. `index` is in ProPresenter's cue space
-// (current arrangement, else stored order) — the same addrIndex the grid computes.
-const ppGetRaw = (path: string) => invoke<void>("pp_action", { path });
-export const ppFocusTrigger = (uuid: string, index: number) => {
-  const u = encodeURIComponent(uuid);
-  return ctrl(
-    ppGetRaw(`presentation/${u}/focus`).then(
-      () => ppGetRaw(`presentation/focused/${index}/trigger`),
-      // focus unsupported/failed → trigger by uuid directly (don't fire "focused",
-      // which could be a different presentation).
-      () => ppGetRaw(`presentation/${u}/${index}/trigger`),
-    ),
-  );
-};
-/**
- * Go straight to one cue of one playlist item. One request.
- *
- * ProDeck used to do this in three: focus the playlist, trigger the item, then
- * trigger the cue. Every click therefore restarted the item at its first slide
- * and jumped from there to the one you asked for — visible as the deck
- * skipping around, and a race besides, since the item's own first cue fires
- * its actions on the way past.
- *
- * `playlist/{playlist}/{item}/{cue}/trigger` does the whole thing in one go,
- * verified against a live ProPresenter: it activates the item with its own
- * arrangement and destination and lands on the cue, with nothing fired in
- * between. Some items answer 404 to a cue-level trigger (a presentation with
- * no addressable cues), so those fall back to triggering the item itself
- * rather than failing the click.
- */
-/**
- * Trigger a cue of whatever is LIVE, by its cue index — used by the slide grid,
- * which shows the active presentation rather than a playlist item.
- *
- * `.../trigger` is the important part: ProPresenter treats a cue trigger as
- * "play this cue", so whatever the slide carries fires with it. Verified live
- * across a whole 117-cue arrangement, landing on every index and never leaving
- * the presentation.
- */
 /** macOS Local Network diagnosis — see src-tauri/src/lan.rs. */
 export type LocalNetworkReport = {
   internet_ok: boolean;
@@ -492,47 +441,163 @@ export type LocalNetworkReport = {
 export const diagLocalNetwork = () => invoke<LocalNetworkReport>("diag_local_network");
 export const openLocalNetworkSettings = () => invoke<void>("open_local_network_settings");
 
-export const ppTriggerActiveCue = (cueIndex: number) =>
-  ctrl(ppGetRaw(`presentation/active/${cueIndex}/trigger`));
+export type ProPresenterInstance = 1 | 2;
 
-export const ppPlaylistTrigger = (
-  playlistId: string,
-  itemIndex: number,
-  cueIndex: number,
-  _alreadyActive?: boolean,
-) => {
-  const pl = encodeURIComponent(playlistId);
-  return ctrl(
-    ppGetRaw(`playlist/${pl}/${itemIndex}/${cueIndex}/trigger`).catch(() =>
-      ppGetRaw(`playlist/${pl}/${itemIndex}/trigger`),
-    ),
-  );
-};
-export const ppDelete = (path: string) => invoke<void>("pp_delete", { path });
-export const ppNext = () => ctrl(invoke<void>("pp_trigger_next"));
-export const ppPrevious = () => ctrl(invoke<void>("pp_trigger_previous"));
-export const ppClearLayer = (layer: string) =>
-  ctrl(invoke<void>("pp_clear_layer", { layer }));
-export const ppTriggerMacro = (id: string) =>
-  ctrl(invoke<void>("pp_trigger_macro", { id }));
-export const ppTriggerLook = (id: string) =>
-  ctrl(invoke<void>("pp_trigger_look", { id }));
-export const ppTimerOp = (id: string, op: "start" | "stop" | "reset") =>
-  ctrl(invoke<void>("pp_timer_op", { id, op }));
-export const ppSetStageMessage = (message: string) =>
-  ctrl(invoke<void>("pp_set_stage_message", { message }));
-export const ppClearStageMessage = () => ctrl(invoke<void>("pp_clear_stage_message"));
-export const ppThumbnail = (uuid: string, index: number, quality = 400) =>
-  invoke<string>("pp_thumbnail", { uuid, index, quality });
-// Thumbnail for a slide of a PLAYLIST ITEM. cueIndex is the display position in
-// the item's arrangement; the image always matches the slide we show, regardless
-// of ProPresenter's current_arrangement state.
-export const ppPlaylistThumbnail = (
-  playlistId: string,
-  itemIndex: number,
-  cueIndex: number,
-  quality = 400,
-) => invoke<string>("pp_playlist_thumbnail", { playlistId, itemIndex, cueIndex, quality });
+/** Bind the destination once. Async work never depends on the active page. */
+export function createPpClient(instance: ProPresenterInstance = 1) {
+  const request = <T,>(cmd: string, args: Record<string, unknown> = {}) =>
+    invoke<T>(cmd, instance === 1 ? args : { ...args, instance }).catch((e) => {
+      throw instance === 2 ? new Error(`propresenter 2: ${String(e)}`) : e;
+    });
+  const ppConnect = (config: ProPresenterConfig) =>
+    request<Json>("pp_connect", { config });
+  const ppDisconnect = () => request<void>("pp_disconnect");
+  const ppIsConnected = () => request<boolean>("pp_is_connected");
+  const ppGet = (path: string) => request<Json>("pp_get", { path });
+  const ppPut = (path: string, body?: unknown) =>
+    request<void>("pp_put", { path, body });
+  // Messages carry token values, so triggering one is a PUT-with-body (unlike
+  // other triggers, which are GET). Routed through the control-failure toast.
+  const ppTriggerMessage = (id: string) =>
+    ctrl(request<void>("pp_put", { path: `message/${encodeURIComponent(id)}/trigger`, body: [] }));
+  // ProPresenter trigger/clear actions are GET (a PUT 404s). Use this for every
+  // "do it now" action (slide trigger, prop/clear, next/previous, …).
+  const ppAction = (path: string) => ctrl(request<void>("pp_action", { path }));
+  // Trigger a slide the way an operator's click does — so the slide's attached
+  // ACTIONS fire too (audience Look, macros, clears). The bare
+  // presentation/{uuid}/{index}/trigger puts up the slide but, depending on how the
+  // action is attached, may not fire it; focusing the presentation first and then
+  // triggering the FOCUSED cue mirrors a UI click and reliably fires the actions
+  // (this is what ProDeck does). Falls back to a bare trigger if focus fails so a
+  // slide always at least goes live. `index` is in ProPresenter's cue space
+  // (current arrangement, else stored order) — the same addrIndex the grid computes.
+  const ppGetRaw = (path: string) => request<void>("pp_action", { path });
+  const ppFocusTrigger = (uuid: string, index: number) => {
+    const u = encodeURIComponent(uuid);
+    return ctrl(
+      ppGetRaw(`presentation/${u}/focus`).then(
+        () => ppGetRaw(`presentation/focused/${index}/trigger`),
+        // focus unsupported/failed → trigger by uuid directly (don't fire "focused",
+        // which could be a different presentation).
+        () => ppGetRaw(`presentation/${u}/${index}/trigger`),
+      ),
+    );
+  };
+  /**
+   * Go straight to one cue of one playlist item. One request.
+   *
+   * ProDeck used to do this in three: focus the playlist, trigger the item, then
+   * trigger the cue. Every click therefore restarted the item at its first slide
+   * and jumped from there to the one you asked for — visible as the deck
+   * skipping around, and a race besides, since the item's own first cue fires
+   * its actions on the way past.
+   *
+   * `playlist/{playlist}/{item}/{cue}/trigger` does the whole thing in one go,
+   * verified against a live ProPresenter: it activates the item with its own
+   * arrangement and destination and lands on the cue, with nothing fired in
+   * between. Some items answer 404 to a cue-level trigger (a presentation with
+   * no addressable cues), so those fall back to triggering the item itself
+   * rather than failing the click.
+   */
+  /**
+   * Trigger a cue of whatever is LIVE, by its cue index — used by the slide grid,
+   * which shows the active presentation rather than a playlist item.
+   *
+   * `.../trigger` is the important part: ProPresenter treats a cue trigger as
+   * "play this cue", so whatever the slide carries fires with it. Verified live
+   * across a whole 117-cue arrangement, landing on every index and never leaving
+   * the presentation.
+   */
+  const ppTriggerActiveCue = (cueIndex: number) =>
+    ctrl(ppGetRaw(`presentation/active/${cueIndex}/trigger`));
+
+  const ppPlaylistTrigger = (
+    playlistId: string,
+    itemIndex: number,
+    cueIndex: number,
+    _alreadyActive?: boolean,
+  ) => {
+    const pl = encodeURIComponent(playlistId);
+    return ctrl(
+      ppGetRaw(`playlist/${pl}/${itemIndex}/${cueIndex}/trigger`).catch(() =>
+        ppGetRaw(`playlist/${pl}/${itemIndex}/trigger`),
+      ),
+    );
+  };
+  const ppDelete = (path: string) => request<void>("pp_delete", { path });
+  const ppNext = () => ctrl(request<void>("pp_trigger_next"));
+  const ppPrevious = () => ctrl(request<void>("pp_trigger_previous"));
+  const ppClearLayer = (layer: string) =>
+    ctrl(request<void>("pp_clear_layer", { layer }));
+  const ppTriggerMacro = (id: string) =>
+    ctrl(request<void>("pp_trigger_macro", { id }));
+  const ppTriggerLook = (id: string) =>
+    ctrl(request<void>("pp_trigger_look", { id }));
+  const ppTimerOp = (id: string, op: "start" | "stop" | "reset") =>
+    ctrl(request<void>("pp_timer_op", { id, op }));
+  const ppSetStageMessage = (message: string) =>
+    ctrl(request<void>("pp_set_stage_message", { message }));
+  const ppClearStageMessage = () => ctrl(request<void>("pp_clear_stage_message"));
+  const ppThumbnail = (uuid: string, index: number, quality = 400) =>
+    request<string>("pp_thumbnail", { uuid, index, quality });
+  // Thumbnail for a slide of a PLAYLIST ITEM. cueIndex is the display position in
+  // the item's arrangement; the image always matches the slide we show, regardless
+  // of ProPresenter's current_arrangement state.
+  const ppPlaylistThumbnail = (
+    playlistId: string,
+    itemIndex: number,
+    cueIndex: number,
+    quality = 400,
+  ) => request<string>("pp_playlist_thumbnail", { playlistId, itemIndex, cueIndex, quality });
+
+  return {
+    ppConnect,
+    ppDisconnect,
+    ppIsConnected,
+    ppGet,
+    ppPut,
+    ppTriggerMessage,
+    ppAction,
+    ppFocusTrigger,
+    ppTriggerActiveCue,
+    ppPlaylistTrigger,
+    ppDelete,
+    ppNext,
+    ppPrevious,
+    ppClearLayer,
+    ppTriggerMacro,
+    ppTriggerLook,
+    ppTimerOp,
+    ppSetStageMessage,
+    ppClearStageMessage,
+    ppThumbnail,
+    ppPlaylistThumbnail,
+  };
+}
+
+export const {
+  ppConnect,
+  ppDisconnect,
+  ppIsConnected,
+  ppGet,
+  ppPut,
+  ppTriggerMessage,
+  ppAction,
+  ppFocusTrigger,
+  ppTriggerActiveCue,
+  ppPlaylistTrigger,
+  ppDelete,
+  ppNext,
+  ppPrevious,
+  ppClearLayer,
+  ppTriggerMacro,
+  ppTriggerLook,
+  ppTimerOp,
+  ppSetStageMessage,
+  ppClearStageMessage,
+  ppThumbnail,
+  ppPlaylistThumbnail,
+} = createPpClient();
 
 // Open a printable HTML document in the default browser (where print / save-as-PDF
 // works reliably — the in-app WebView's window.print() does not on macOS).
@@ -623,6 +688,7 @@ export const geminiTest = () => invoke<string>("gemini_test");
 
 // ---- "Ask ProDeck" troubleshooter (design/TROUBLESHOOTER.md) ----------------
 export interface AssistStatus {
+  provider: "anthropic" | "gemini";
   configured: boolean;
   model: string;
   members: boolean;
@@ -770,8 +836,8 @@ export const pcoSetLiveInterval = (ms: number) =>
 // Web gateway (LAN browser access)
 export const webStart = (port: number) => invoke<void>("web_start", { port });
 export const webStop = () => invoke<void>("web_stop");
-export const webStatus = () =>
-  invoke<{ running: boolean; port: number }>("web_status");
+export interface WebStatus { running: boolean; port: number; hosts: string[] }
+export const webStatus = () => invoke<WebStatus>("web_status");
 
 /** The window during which /join will hand out the crew token. */
 export const crewJoinState = () =>

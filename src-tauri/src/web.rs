@@ -4,18 +4,18 @@
 // proxies a password-gated whitelist of control commands via POST /api/cmd.
 
 use crate::pco;
-use crate::propresenter::{current_config, ProPresenterState};
+use crate::propresenter::{current_config, select_state, ProPresenter2State, ProPresenterState};
 use crate::settings::{Settings, SettingsState};
 use base64::Engine;
 use include_dir::{include_dir, Dir};
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Listener, Manager, Emitter};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use crate::web_listener::GatewayListener;
 use tokio::sync::broadcast;
 
 // The Vite build output, embedded into the binary at compile time.
@@ -29,6 +29,10 @@ const FORWARD_EVENTS: &[&str] = &[
     "pp:connected",
     "pp:disconnected",
     "pp:status",
+    "pp2:connected",
+    "pp2:disconnected",
+    "pp2:status",
+    "pp2:stream_error",
     "pp:stream_error",
     "caption:line",
     "caption:status",
@@ -67,8 +71,7 @@ const FORWARD_EVENTS: &[&str] = &[
 ];
 
 pub struct WebInner {
-    pub running: AtomicBool,
-    pub port: AtomicU16,
+    listener: GatewayListener,
     pub tx: broadcast::Sender<String>,
     // Last frame per event (pp:status keyed by stream) so a browser that connects
     // after the host is already live receives the current state immediately.
@@ -80,8 +83,7 @@ impl WebInner {
     pub fn new() -> Self {
         let (tx, _rx) = broadcast::channel(1024);
         Self {
-            running: AtomicBool::new(false),
-            port: AtomicU16::new(0),
+            listener: GatewayListener::new(),
             tx,
             snapshot: Mutex::new(HashMap::new()),
             listeners_ready: AtomicBool::new(false),
@@ -211,6 +213,23 @@ pub(crate) fn token_ok(app: &AppHandle, token: &str) -> bool {
 }
 
 /// Register one-time global listeners that fan app events into the SSE channel.
+fn remember_frame(snap: &mut HashMap<String, String>, name: &str, payload: &str, frame: String) {
+    // A reconnect must also remove the previous disconnect. Otherwise a phone
+    // joining later can replay both transitions in arbitrary HashMap order.
+    if let Some(prefix) = name.strip_suffix(":disconnected").filter(|p| *p == "pp" || *p == "pp2") {
+        snap.retain(|k, _| !k.starts_with(&format!("{prefix}:")));
+    }
+    if let Some(prefix) = name.strip_suffix(":connected").filter(|p| *p == "pp" || *p == "pp2") {
+        snap.remove(&format!("{prefix}:disconnected"));
+    }
+    let key = if name == "pp:status" || name == "pp2:status" {
+        serde_json::from_str::<Value>(payload).ok()
+            .and_then(|v| v.get("stream").and_then(Value::as_str).map(|stream| format!("{name}::{stream}")))
+            .unwrap_or_else(|| name.to_string())
+    } else { name.to_string() };
+    snap.insert(key, frame);
+}
+
 fn ensure_listeners(app: &AppHandle, web: &WebState) {
     if web.listeners_ready.swap(true, Ordering::AcqRel) {
         return;
@@ -244,24 +263,7 @@ fn ensure_listeners(app: &AppHandle, web: &WebState) {
             };
             if !ONE_SHOT.contains(&nm.as_str()) {
                 let mut snap = web.snapshot.lock().unwrap_or_else(|p| p.into_inner());
-                // ProPresenter dropped — forget its stale connected/status snapshot.
-                if nm == "pp:disconnected" {
-                    snap.retain(|k, _| !k.starts_with("pp:"));
-                }
-                // pp:status carries several distinct streams under one event name.
-                let key = if nm == "pp:status" {
-                    serde_json::from_str::<Value>(payload)
-                        .ok()
-                        .and_then(|v| {
-                            v.get("stream")
-                                .and_then(|s| s.as_str())
-                                .map(|s| format!("pp:status::{s}"))
-                        })
-                        .unwrap_or_else(|| "pp:status".to_string())
-                } else {
-                    nm.clone()
-                };
-                snap.insert(key, frame.clone());
+                remember_frame(&mut snap, &nm, payload, frame.clone());
             }
             if !drop_frame {
                 let _ = web.tx.send(frame);
@@ -270,52 +272,20 @@ fn ensure_listeners(app: &AppHandle, web: &WebState) {
     }
 }
 
-pub fn start(app: AppHandle, web: WebState, port: u16) {
-    if web.running.swap(true, Ordering::AcqRel) {
-        return; // already running
-    }
+pub async fn start(app: AppHandle, web: WebState, port: u16) -> Result<(), String> {
     ensure_listeners(&app, &web);
-    web.port.store(port, Ordering::Release);
-
-    tauri::async_runtime::spawn(async move {
-        // The previous server (after a port change) may hold the socket briefly.
-        let mut listener = None;
-        for _ in 0..6 {
-            match TcpListener::bind(("0.0.0.0", port)).await {
-                Ok(l) => {
-                    listener = Some(l);
-                    break;
-                }
-                Err(_) => tokio::time::sleep(Duration::from_millis(500)).await,
-            }
-        }
-        let listener = match listener {
-            Some(l) => l,
-            None => {
-                web.running.store(false, Ordering::Release);
-                crate::diag::log(format!("web gateway: could not bind port {port}"));
-                return;
-            }
-        };
-
-        while web.running.load(Ordering::Acquire) {
-            // Time-boxed accept so toggling off releases the port within ~1s.
-            match tokio::time::timeout(Duration::from_secs(1), listener.accept()).await {
-                Ok(Ok((stream, _addr))) => {
-                    let app2 = app.clone();
-                    let web2 = web.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let _ = handle_conn(stream, app2, web2).await;
-                    });
-                }
-                _ => continue,
-            }
-        }
-    });
+    let connections = web.clone();
+    web.listener.start(port, move |stream| {
+        let app = app.clone();
+        let web = connections.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = handle_conn(stream, app, web).await;
+        });
+    }).await
 }
 
-pub fn stop(web: &WebState) {
-    web.running.store(false, Ordering::Release);
+pub async fn stop(web: &WebState) {
+    web.listener.stop().await;
 }
 
 fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -1076,6 +1046,12 @@ async fn serve_sse(
     if pp_live && !snapshot.iter().any(|f| f.contains("\"pp:connected\"")) {
         snapshot.push("{\"event\":\"pp:connected\",\"payload\":null}".to_string());
     }
+    let pp2 = app.state::<ProPresenter2State>().0.clone();
+    if let Some(c) = pp2.lock().await.as_ref() {
+        if !snapshot.iter().any(|f| f.contains("\"pp2:connected\"") || f.contains("\"pp2:disconnected\"")) {
+            snapshot.push(json!({"event": "pp2:connected", "payload": c.config}).to_string());
+        }
+    }
     for frame in snapshot {
         let msg = format!("data: {}\n\n", frame);
         if stream.write_all(msg.as_bytes()).await.is_err() {
@@ -1099,7 +1075,7 @@ async fn serve_sse(
                 }
             }
         }
-        if !web.running.load(Ordering::Acquire) {
+        if !web.listener.running.load(Ordering::Acquire) {
             break;
         }
     }
@@ -1277,9 +1253,15 @@ async fn pco_auth(app: &AppHandle) -> Result<pco::Auth, String> {
     pco::auth(st.inner()).await
 }
 
+fn pp_target(app: &AppHandle, args: &Value) -> Result<ProPresenterState, String> {
+    let instance: Option<u8> = serde_json::from_value(args.get("instance").cloned().unwrap_or(Value::Null))
+        .map_err(|_| "Invalid ProPresenter instance".to_string())?;
+    select_state(&pp_handle(app), &app.state::<ProPresenter2State>(), instance)
+}
+
 // ProPresenter trigger/clear endpoints are GET (a PUT 404s).
-async fn pp_action_raw(app: &AppHandle, full_path: &str) -> Result<Value, String> {
-    let (client, base) = current_config(&pp_handle(app)).await?;
+async fn pp_action_raw(app: &AppHandle, args: &Value, full_path: &str) -> Result<Value, String> {
+    let (client, base) = current_config(&pp_target(app, args)?).await?;
     client
         .get(format!("{}{}", base, full_path))
         .send()
@@ -1911,7 +1893,7 @@ async fn dispatch(
             if tier == Tier::Member && !member_pp_read_ok(&path) && !perms.iter().any(|p| p == "control") {
                 return Err("that ProPresenter path needs admin access".into());
             }
-            let (client, base) = current_config(&pp_handle(app)).await?;
+            let (client, base) = current_config(&pp_target(app, args)?).await?;
             let url = format!("{}/v1/{}", base, path.trim_start_matches('/'));
             let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
             if resp.status().as_u16() == 204 {
@@ -1921,7 +1903,7 @@ async fn dispatch(
         }
         "pp_put" => {
             let path = s("path").ok_or("missing path")?;
-            let (client, base) = current_config(&pp_handle(app)).await?;
+            let (client, base) = current_config(&pp_target(app, args)?).await?;
             let url = format!("{}/v1/{}", base, path.trim_start_matches('/'));
             let mut req = client.put(&url);
             if let Some(b) = args.get("body") {
@@ -1937,37 +1919,37 @@ async fn dispatch(
         }
         "pp_delete" => {
             let path = s("path").ok_or("missing path")?;
-            let (client, base) = current_config(&pp_handle(app)).await?;
+            let (client, base) = current_config(&pp_target(app, args)?).await?;
             let url = format!("{}/v1/{}", base, path.trim_start_matches('/'));
             client.delete(&url).send().await.map_err(|e| e.to_string())?;
             Ok(Value::Null)
         }
         "pp_action" => {
             let path = s("path").ok_or("missing path")?;
-            pp_action_raw(app, &format!("/v1/{}", path.trim_start_matches('/'))).await
+            pp_action_raw(app, args, &format!("/v1/{}", path.trim_start_matches('/'))).await
         }
-        "pp_trigger_next" => pp_action_raw(app, "/v1/trigger/next").await,
-        "pp_trigger_previous" => pp_action_raw(app, "/v1/trigger/previous").await,
+        "pp_trigger_next" => pp_action_raw(app, args, "/v1/trigger/next").await,
+        "pp_trigger_previous" => pp_action_raw(app, args, "/v1/trigger/previous").await,
         "pp_clear_layer" => {
             let l = s("layer").ok_or("missing layer")?;
-            pp_action_raw(app, &format!("/v1/clear/layer/{}", l)).await
+            pp_action_raw(app, args, &format!("/v1/clear/layer/{}", l)).await
         }
         "pp_trigger_macro" => {
             let id = s("id").ok_or("missing id")?;
-            pp_action_raw(app, &format!("/v1/macro/{}/trigger", urlencoding::encode(&id))).await
+            pp_action_raw(app, args, &format!("/v1/macro/{}/trigger", urlencoding::encode(&id))).await
         }
         "pp_trigger_look" => {
             let id = s("id").ok_or("missing id")?;
-            pp_action_raw(app, &format!("/v1/look/{}/trigger", urlencoding::encode(&id))).await
+            pp_action_raw(app, args, &format!("/v1/look/{}/trigger", urlencoding::encode(&id))).await
         }
         "pp_timer_op" => {
             let id = s("id").ok_or("missing id")?;
             let op = s("op").unwrap_or_default();
-            pp_action_raw(app, &format!("/v1/timer/{}/{}", urlencoding::encode(&id), op)).await
+            pp_action_raw(app, args, &format!("/v1/timer/{}/{}", urlencoding::encode(&id), op)).await
         }
         "pp_set_stage_message" => {
             let msg = s("message").unwrap_or_default();
-            let (client, base) = current_config(&pp_handle(app)).await?;
+            let (client, base) = current_config(&pp_target(app, args)?).await?;
             client
                 .put(format!("{}/v1/stage/message", base))
                 .json(&msg)
@@ -1977,7 +1959,7 @@ async fn dispatch(
             Ok(Value::Null)
         }
         "pp_clear_stage_message" => {
-            let (client, base) = current_config(&pp_handle(app)).await?;
+            let (client, base) = current_config(&pp_target(app, args)?).await?;
             client
                 .delete(format!("{}/v1/stage/message", base))
                 .send()
@@ -1989,7 +1971,7 @@ async fn dispatch(
             let uuid = s("uuid").ok_or("missing uuid")?;
             let index = args.get("index").and_then(|x| x.as_u64()).unwrap_or(0);
             let quality = args.get("quality").and_then(|x| x.as_u64()).unwrap_or(640);
-            let (client, base) = current_config(&pp_handle(app)).await?;
+            let (client, base) = current_config(&pp_target(app, args)?).await?;
             let url = format!(
                 "{}/v1/presentation/{}/thumbnail/{}?quality={}",
                 base,
@@ -2010,7 +1992,7 @@ async fn dispatch(
             let item_index = args.get("itemIndex").and_then(|x| x.as_u64()).unwrap_or(0);
             let cue_index = args.get("cueIndex").and_then(|x| x.as_u64()).unwrap_or(0);
             let quality = args.get("quality").and_then(|x| x.as_u64()).unwrap_or(640);
-            let (client, base) = current_config(&pp_handle(app)).await?;
+            let (client, base) = current_config(&pp_target(app, args)?).await?;
             let url = format!(
                 "{}/v1/playlist/{}/{}/thumbnail/{}?quality={}",
                 base,
@@ -2223,25 +2205,48 @@ pub fn crew_join_state(settings: tauri::State<'_, SettingsState>) -> Value {
     })
 }
 
+/// Use the network interface and OS Bonjour name, never the editable booth label.
+fn lan_hosts() -> Vec<String> {
+    let mut hosts = Vec::new();
+    // UDP connect only selects a route; no packet is sent to this documentation address.
+    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
+        if socket.connect("192.0.2.1:9").is_ok() {
+            if let Ok(addr) = socket.local_addr() {
+                if !addr.ip().is_loopback() && !addr.ip().is_unspecified() {
+                    hosts.push(addr.ip().to_string());
+                }
+            }
+        }
+    }
+    #[cfg(target_os = "macos")]
+    if let Ok(output) = std::process::Command::new("/usr/sbin/scutil").args(["--get", "LocalHostName"]).output() {
+        let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if output.status.success() && !name.is_empty() {
+            hosts.push(format!("{name}.local"));
+        }
+    }
+    hosts
+}
+
 #[tauri::command]
 pub fn web_status(state: tauri::State<'_, WebState>) -> Value {
     json!({
-        "running": state.running.load(Ordering::Acquire),
-        "port": state.port.load(Ordering::Acquire),
+        "running": state.listener.running.load(Ordering::Acquire),
+        "port": state.listener.port.load(Ordering::Acquire),
+        "hosts": lan_hosts(),
     })
 }
 
 #[tauri::command]
-pub fn web_start(port: u16, app: AppHandle, state: tauri::State<'_, WebState>) {
-    if state.running.load(Ordering::Acquire) {
-        stop(&state);
-    }
-    start(app, state.inner().clone(), port);
+pub async fn web_start(port: u16, app: AppHandle, state: tauri::State<'_, WebState>) -> Result<(), String> {
+    if port == 0 { return Err("Choose a Browser Access port between 1 and 65535".into()); }
+    start(app, state.inner().clone(), port).await
 }
 
 #[tauri::command]
-pub fn web_stop(state: tauri::State<'_, WebState>) {
-    stop(&state);
+pub async fn web_stop(state: tauri::State<'_, WebState>) -> Result<(), String> {
+    stop(state.inner()).await;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -2365,5 +2370,30 @@ mod member_pp_tests {
         ] {
             assert!(!member_pp_read_ok(bad), "should refuse control: {bad}");
         }
+    }
+}
+
+#[cfg(test)]
+mod second_presenter_snapshot_tests {
+    use super::*;
+
+    #[test]
+    fn reconnect_replay_never_contains_both_states_or_loses_the_other_machine() {
+        let mut snap = HashMap::new();
+        remember_frame(&mut snap, "pp:connected", "{}", "first online".into());
+        remember_frame(&mut snap, "pp:status", r#"{"stream":"layers"}"#, "first layers".into());
+        remember_frame(&mut snap, "pp2:connected", "{}", "second online".into());
+        remember_frame(&mut snap, "pp2:status", r#"{"stream":"layers"}"#, "second layers".into());
+        remember_frame(&mut snap, "pp2:disconnected", "null", "second offline".into());
+        assert_eq!(snap["pp:status::layers"], "first layers");
+        assert!(snap.contains_key("pp:connected"));
+        assert!(!snap.contains_key("pp2:connected"));
+        assert!(!snap.contains_key("pp2:status::layers"));
+        remember_frame(&mut snap, "pp2:connected", "{}", "second reconnected".into());
+        assert!(!snap.contains_key("pp2:disconnected"));
+        assert_eq!(snap["pp2:connected"], "second reconnected");
+        remember_frame(&mut snap, "pp2:status", r#"{"stream":"layers"}"#, "new second layers".into());
+        assert_eq!(snap["pp:status::layers"], "first layers");
+        assert_eq!(snap["pp2:status::layers"], "new second layers");
     }
 }

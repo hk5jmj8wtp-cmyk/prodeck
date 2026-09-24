@@ -804,7 +804,7 @@ The card shows the song, the section, a bar for how far through the slide the le
 
 It can only say what this building's **routing map**, **knowledge files** and **live state** say. Every fact it uses is tied to a thing on the map, shown as a link under the answer — tap it to open the walk. It never touches the desk.
 
-To turn it on: **Settings → Troubleshooter**, paste an Anthropic API key (console.anthropic.com), pick a model, and choose whether crew phones may ask. The key stays on the booth; phones ask through it.
+To turn it on: **Settings → Troubleshooter**, choose **Claude (Anthropic)** or **Gemini (Google)**, enter that provider's API key, pick a model, and choose whether crew phones may ask. Enter a Gemini key on the booth Mac; it stays there and phones ask through the gateway. Each provider remembers its own model and key. The monthly cap is shared across both providers.
 
 - **Knowledge files.** A folder on the booth (Settings shows where) holding plain markdown about your building: machines and addresses, which scenes are safe to recall mid-service, what feeds what, known oddities. Everything in it is read on every question. Write what a new sound tech would need.
 - **The log.** Every question and answer is kept on the booth so whoever owns the room can see what was asked and fix the notes.

@@ -5,6 +5,8 @@ import {
   type ComponentType,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { usePpConnection, usePpClient, usePpInstance } from "../propresenterStore";
+import { withProPresenterSource } from "./ProPresenterWidget";
 import { useProDeck } from "../store";
 import { usePerms } from "../lib/perms";
 import { SlideThumb } from "../components/SlideThumb";
@@ -36,12 +38,6 @@ import {
   on,
   chatHistory,
   type ChatMsg,
-  ppAction,
-  ppClearLayer,
-  ppClearStageMessage,
-  ppGet,
-  ppSetStageMessage,
-  ppTimerOp,
   startAudioCapture,
   stopAudioCapture,
   tapEdgeState,
@@ -85,7 +81,6 @@ import {
 import { RtaGraph } from "../components/RtaGraph";
 import { type Slide } from "../components/PlaylistControl";
 import { slidesForActivePresentation } from "../lib/slideOrder";
-import { ppTriggerActiveCue } from "../lib/tauri";
 
 export interface WidgetProps {
   widget: Widget;
@@ -97,6 +92,7 @@ export interface WidgetProps {
 export type WidgetGroup =
   | "Mission Control"
   | "ProPresenter"
+  | "propresenter 2"
   | "Planning Center"
   | "Audio"
   | "Video"
@@ -105,6 +101,7 @@ export type WidgetGroup =
 export const WIDGET_GROUP_ORDER: WidgetGroup[] = [
   "Mission Control",
   "ProPresenter",
+  "propresenter 2",
   "Planning Center",
   "Audio",
   "Video",
@@ -134,9 +131,13 @@ export interface WidgetDef {
 // way to get to the setup it had never done. Same signal `isFreshInstall` uses.
 function Disconnected() {
   const { settings } = useProDeck();
+  const instance = usePpInstance();
+  const { label } = usePpConnection();
   if (!settings) return <div className="widget-empty">Not connected</div>;
-  if (!settings.pp_auto_connect) return <NeedsPro />;
-  return <NeedsPro offline />;
+  const auto = instance === 2 ? settings.pp2_auto_connect : settings.pp_auto_connect;
+  return <NeedsPro what={label} anchor={instance === 2 ? "set-pp2" : "set-pp"}
+    hint={auto ? `${label} is offline — reconnecting…` : `Connect ${label} to see live slides and timers`}
+    offline={auto} />;
 }
 
 interface ScreenInfo {
@@ -297,7 +298,8 @@ function LiveViewersWidget() {
 }
 
 function SlideGridWidget() {
-  const { connected, status } = useProDeck();
+  const { connected, status } = usePpConnection();
+  const { ppGet, ppTriggerActiveCue } = usePpClient();
   const [slides, setSlides] = useState<Slide[] | null>(null);
   const pres = activePresentation(status);
   const liveIdx = currentSlideIndex(status);
@@ -386,7 +388,8 @@ function SlideGridWidget() {
 }
 
 function SlidePreviewWidget({ widget, update }: WidgetProps) {
-  const { connected, status } = useProDeck();
+  const { connected, status } = usePpConnection();
+  const { ppGet } = usePpClient();
   const [screens, setScreens] = useState<ScreenInfo[]>([]);
 
   // Screen list rarely changes — fetch once per connection.
@@ -473,7 +476,8 @@ function SlidePreviewWidget({ widget, update }: WidgetProps) {
 }
 
 function TimerWidget({ widget, editing, update }: WidgetProps) {
-  const { connected } = useProDeck();
+  const { connected } = usePpConnection();
+  const { ppTimerOp } = usePpClient();
   const timers = useLiveTimers();
   const selected = widget.config.timerId
     ? timers.find((t) => t.id === widget.config.timerId)
@@ -2538,7 +2542,10 @@ function ServiceClockWidget({ widget, editing, update }: WidgetProps) {
 // them. Verified live: playlist/{id}/{index}/trigger → announcement/active →
 // clear/layer/announcements.
 function LobbyTvWidget(_: WidgetProps) {
-  const { connected } = useProDeck();
+  const { connected } = usePpConnection();
+  const instance = usePpInstance();
+  const prefix = instance === 2 ? "pp2_lobby_auto" : "lobby_auto";
+  const { ppGet, ppAction, ppClearLayer } = usePpClient();
   const [active, setActive] = useState<string | null>(null);
   const [buttons, setButtons] = useState<{ pl: string; plName: string; index: number; name: string }[]>([]);
   const [busy, setBusy] = useState("");
@@ -2550,8 +2557,8 @@ function LobbyTvWidget(_: WidgetProps) {
   useEffect(() => {
     getSettings()
       .then((s: any) => {
-        if (s?.lobby_auto_playlist)
-          setAuto({ pl: s.lobby_auto_playlist, index: s.lobby_auto_index ?? 0, name: s.lobby_auto_name ?? "" });
+        if (s?.[`${prefix}_playlist`])
+          setAuto({ pl: s[`${prefix}_playlist`], index: s[`${prefix}_index`] ?? 0, name: s[`${prefix}_name`] ?? "" });
       })
       .catch(() => {});
   }, []);
@@ -2561,9 +2568,9 @@ function LobbyTvWidget(_: WidgetProps) {
       const s: any = await getSettings();
       await updateSettings({
         ...s,
-        lobby_auto_playlist: next?.pl ?? "",
-        lobby_auto_index: next?.index ?? 0,
-        lobby_auto_name: next?.name ?? "",
+        [`${prefix}_playlist`]: next?.pl ?? "",
+        [`${prefix}_index`]: next?.index ?? 0,
+        [`${prefix}_name`]: next?.name ?? "",
       });
       setAuto(next);
     } catch (e) {
@@ -2719,7 +2726,8 @@ function LobbyTvWidget(_: WidgetProps) {
  * that is stated on screen rather than assumed, and Keep up cancels it.
  */
 function StageMessageWidget({ widget, update, editing }: WidgetProps) {
-  const { connected, status } = useProDeck();
+  const { connected, status } = usePpConnection();
+  const { ppSetStageMessage, ppClearStageMessage } = usePpClient();
   const { can } = usePerms();
   const locked = !can("stage");
   const live = stageMessageText(status);
@@ -3091,12 +3099,12 @@ export const WIDGETS: WidgetDef[] = [
   { type: "service_clock", label: "Service Countdown", group: "Mission Control", w: 3, h: 3, component: ServiceClockWidget },
   { type: "service_tracking", label: "Service Tracking", group: "Mission Control", w: 6, h: 6, component: ServiceTrackingWidget },
   // ProPresenter
-  { type: "slide_preview", label: "Slide Preview", group: "ProPresenter", w: 5, h: 5, component: SlidePreviewWidget },
-  { type: "slide_grid", label: "Slide Grid", group: "ProPresenter", w: 4, h: 8, component: SlideGridWidget },
-  { type: "timer", label: "Timer", group: "ProPresenter", w: 4, h: 3, component: TimerWidget },
+  { type: "slide_preview", label: "Slide Preview", group: "ProPresenter", w: 5, h: 5, component: withProPresenterSource(SlidePreviewWidget) },
+  { type: "slide_grid", label: "Slide Grid", group: "ProPresenter", w: 4, h: 8, component: withProPresenterSource(SlideGridWidget) },
+  { type: "timer", label: "Timer", group: "ProPresenter", w: 4, h: 3, component: withProPresenterSource(TimerWidget) },
   { type: "tap_link", label: "TapLink (NFC)", group: "ProPresenter", w: 4, h: 3, component: TapLinkWidget },
-  { type: "lobby_tv", label: "Lobby TVs (Announcements)", group: "ProPresenter", w: 4, h: 3, component: LobbyTvWidget },
-  { type: "stage_message", label: "Stage Message (Alerts)", group: "ProPresenter", w: 4, h: 4, component: StageMessageWidget },
+  { type: "lobby_tv", label: "Lobby TVs (Announcements)", group: "ProPresenter", w: 4, h: 3, component: withProPresenterSource(LobbyTvWidget) },
+  { type: "stage_message", label: "Stage Message (Alerts)", group: "ProPresenter", w: 4, h: 4, component: withProPresenterSource(StageMessageWidget) },
   { type: "confidence", label: "Confidence Banner", group: "ProPresenter", w: 6, h: 3, component: ConfidenceWidget },
   // Planning Center
   { type: "show_flow", label: "Show Flow", group: "Planning Center", w: 4, h: 6, component: ShowFlowWidget },

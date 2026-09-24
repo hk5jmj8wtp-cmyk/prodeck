@@ -143,6 +143,7 @@ export function ProDeckProvider({ children }: { children: ReactNode }) {
   const autoRef = useRef(false);
   const hostRef = useRef("");
   const portRef = useRef(0);
+  const secondaryConfiguredRef = useRef(false);
 
   async function connect(h: string, port: number) {
     setConnectError("");
@@ -383,6 +384,7 @@ export function ProDeckProvider({ children }: { children: ReactNode }) {
     autoRef.current = !!settings?.pp_auto_connect;
     hostRef.current = settings?.pp_host ?? "";
     portRef.current = settings?.pp_port ?? 0;
+    secondaryConfiguredRef.current = !!settings?.pp2_host;
   }, [settings]);
 
   // While auto-connect is enabled and we're offline, keep retrying — covers
@@ -412,7 +414,7 @@ export function ProDeckProvider({ children }: { children: ReactNode }) {
         failsRef.current += 1;
         const n = failsRef.current;
         // After 3 dead retries (~18s), then every 5th after, hunt via mDNS.
-        if (!IS_WEB && (n === 3 || (n > 3 && (n - 3) % 5 === 0))) {
+        if (!IS_WEB && !secondaryConfiguredRef.current && (n === 3 || (n > 3 && (n - 3) % 5 === 0))) {
           try {
             const found = await discoverServices(4);
             // "stage" counts too: the REST API often isn't on the port
@@ -424,6 +426,7 @@ export function ProDeckProvider({ children }: { children: ReactNode }) {
               (x) => x.kind === "propresenter" || x.kind === "stage",
             )) {
               for (const h of [s.host, ...s.addresses]) {
+                if (secondaryConfiguredRef.current) break outer;
                 if (!h || h === hostRef.current) continue;
                 try {
                   await connect(h, portRef.current);

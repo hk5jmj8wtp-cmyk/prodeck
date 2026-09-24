@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode, type CSSProperties } from "react";
-import { useProDeck } from "../store";
+import { usePpConnection, usePpClient } from "../propresenterStore";
 import { activePresentation, currentSlideIndex } from "../lib/status";
-import { ppGet, ppPlaylistTrigger } from "../lib/tauri";
+
 import { SlideThumb } from "./SlideThumb";
 import { Icon } from "./Icon";
 import { parseSlides, type Slide } from "../lib/slideOrder";
@@ -68,7 +68,8 @@ export function PlaylistControl({
   onSlideSize?: (n: number) => void;
   page?: boolean; // spacious page layout: all songs open, no inner scroll
 }) {
-  const { connected, status } = useProDeck();
+  const { connected, status } = usePpConnection();
+  const { ppGet, ppPlaylistTrigger } = usePpClient();
   const [playlists, setPlaylists] = useState<PlNode[]>([]);
   const [items, setItems] = useState<PlItem[]>([]);
   const [open, setOpen] = useState<Set<string>>(new Set());

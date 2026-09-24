@@ -130,3 +130,21 @@ describe("the loop", () => {
     expect(r.text).toMatch(/ran out of steps/);
   });
 });
+
+
+it("preserves Gemini's signed tool parts between rounds while using the same routing tools", async () => {
+  const signed = { functionCall: { name: "channel", args: { number: 39 }, id: "google-1" }, thoughtSignature: "opaque-provider-signature" };
+  let round = 0;
+  const result = await ask(ctx(), [], "Is channel 39 muted?", async (body: any) => {
+    if (round++ === 0) return {
+      stop_reason: "tool_use",
+      content: [{ type: "tool_use", id: "google-1", name: "channel", input: { number: 39 }, gemini_part: signed }],
+    };
+    expect(body.messages[1].content[0].gemini_part).toEqual(signed);
+    expect(body.messages[2].content[0].tool_use_id).toBe("google-1");
+    expect(JSON.parse(body.messages[2].content[0].content).channel).toBe("39");
+    return { stop_reason: "end_turn", content: [{ type: "text", text: "Channel 39 is open [ch 39]." }] };
+  });
+  expect(result.toolCalls).toBe(1);
+  expect(result.cites[0].nodeId).toBe(chId("39"));
+});

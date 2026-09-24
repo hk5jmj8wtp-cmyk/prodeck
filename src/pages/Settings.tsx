@@ -1,3 +1,6 @@
+import { AssistProviderFields } from "../components/AssistProviderFields";
+import { browserBaseUrl, lanBrowserUrls } from "../lib/webAccess";
+import { usePpConnection } from "../propresenterStore";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ANCHOR_TOPIC, openHelp } from "../help/nav";
 import { consumeSettingsJump } from "../lib/settingsJump";
@@ -37,6 +40,7 @@ import {
   updateSettings,
   webStart,
   webStatus,
+  type WebStatus,
   webStop,
   type Settings,
   type AvantisSoftkey,
@@ -96,6 +100,7 @@ export function SettingsPage() {
     const un = on<{ connected: boolean }>("obs:state", (o) => setObsUp(!!o.connected));
     return () => void un.then((f) => f());
   }, []);
+  const pp2 = usePpConnection(2);
   const relay = useRelay();
   const upd = useUpdater();
   const [form, setForm] = useState<Settings | null>(null);
@@ -144,9 +149,10 @@ export function SettingsPage() {
   const [audioInputs, setAudioInputs] = useState<string[]>([]);
   const [oscOn, setOscOn] = useState(false);
   const [status, setStatus] = useState("");
-  const [webInfo, setWebInfo] = useState<{ running: boolean; port: number }>({
+  const [webInfo, setWebInfo] = useState<WebStatus>({
     running: false,
     port: 0,
+    hosts: [],
   });
   // Browser clients receive ga4_key_path redacted, so including it here made
   // a working setup read as "off" everywhere except the booth.
@@ -204,12 +210,21 @@ export function SettingsPage() {
     listMidiInputs().then(setMidiPorts).catch(() => {});
     listMidiOutputs().then(setMidiOutPorts).catch(() => {});
     listAudioInputs().then(setAudioInputs).catch(() => {});
-    if (!IS_WEB) webStatus().then(setWebInfo).catch(() => {});
+    if (!IS_WEB) {
+      let active = true;
+      const refresh = () => webStatus().then((info) => { if (active) setWebInfo(info); }).catch(() => {});
+      refresh();
+      const timer = setInterval(refresh, 5000);
+      return () => { active = false; clearInterval(timer); };
+    }
   }, []);
 
   useEffect(() => {
     if (settings && !form) setForm(settings);
   }, [settings, form]);
+
+  const assistProvider = form?.assist_provider || "anthropic";
+  const assistReady = !!(assistProvider === "gemini" ? form?.gemini_api_key?.trim() : form?.assist_api_key?.trim()) || (IS_WEB && assist?.provider === assistProvider && assist.configured);
 
   if (!form) return <div className="page"><header className="page-head"><h1>Settings</h1></header></div>;
 
@@ -230,10 +245,11 @@ export function SettingsPage() {
       // There was no catch here at all: a rejected save (a member-tier browser,
       // a disk error) left the button never flipping to "Saved ✓" with nothing
       // on screen — indistinguishable from a dead button.
-      setSaveErr(String(e));
+      setSaveErr(`Couldn't save your settings: ${String(e)}`);
       return;
     }
     await refreshSettings();
+    assistStatus().then(setAssist).catch(() => {});
     // Let the key-send hook re-read its config + (re)connect the MIDI output.
     window.dispatchEvent(new Event("prodeck:keysend"));
     document.documentElement.dataset.theme = form.theme;
@@ -243,8 +259,10 @@ export function SettingsPage() {
         if (form.web_enabled && form.web_password) await webStart(form.web_port);
         else await webStop();
         setWebInfo(await webStatus());
-      } catch {
-        /* ignore */
+      } catch (e) {
+        setSaveErr(`Settings saved, but Browser Access could not be applied: ${String(e)}`);
+        setWebInfo(await webStatus().catch(() => ({ running: false, port: 0, hosts: [] })));
+        return;
       }
     }
     setSaved(true);
@@ -334,7 +352,7 @@ export function SettingsPage() {
 
       {saveErr && (
         <div className="banner">
-          Couldn't save your settings — {saveErr}
+          {saveErr}
           <button className="btn small" onClick={() => setSaveErr("")}>
             Dismiss
           </button>
@@ -347,7 +365,7 @@ export function SettingsPage() {
           "where do I approve someone" one click, not a hunt. */}
       <nav className="set-jump">
         {[
-          { g: "Connections", items: [["ProPresenter", "set-pp"], ["Sound Console", "set-avantis"], ["OBS", "set-obs"], ["Stage feed (NDI)", "set-ndi"], ["LAN Relay", "set-relay"], ...(!IS_WEB ? [["Browser Access", "set-web"]] : [])] },
+          { g: "Connections", items: [["ProPresenter", "set-pp"], ["propresenter 2", "set-pp2"], ["Sound Console", "set-avantis"], ["OBS", "set-obs"], ["Stage feed (NDI)", "set-ndi"], ["LAN Relay", "set-relay"], ...(!IS_WEB ? [["Browser Access", "set-web"]] : [])] },
           { g: "Audio", items: [["Audio & Captions", "set-audio"], ["Alerts", "set-alerts"]] },
           { g: "Crew", items: [["Crew Members", "set-crew"]] },
           { g: "Advanced", items: [["Troubleshooter", "set-assist"], ["Gemini", "set-gemini"], ["Control Inputs", "set-inputs"], ["Song Key", "set-songkey"], ["TapLink", "set-taplink"]] },
@@ -449,6 +467,14 @@ export function SettingsPage() {
                   </span>
                 </li>
                 <li>
+                  <Dot s={pp2.connected ? "ok" : form.pp2_host ? "bad" : "idle"} /><span className="conn-name">propresenter 2</span>
+                  <span className="muted small conn-detail">{pp2.connected ? pp2.host : pp2.ppConnecting ? "connecting…" : "not connected"}</span>
+                  {!IS_WEB && <span className="conn-actions">
+                    <button className="btn small" disabled={!form.pp2_host || pp2.ppConnecting} onClick={() => pp2.connect(form.pp2_host, form.pp2_port).catch(() => {})}>Reconnect</button>
+                    {pp2.connected && <button className="btn small ghost" onClick={() => pp2.disconnect()}>Disconnect</button>}
+                  </span>}
+                </li>
+                <li>
                   <Dot s={st("pco")} /><span className="conn-name">Planning Center</span>
                   <span className="muted small conn-detail">{health.find((h) => h.key === "pco")?.detail ?? ""}</span>
                   <span className="conn-actions">
@@ -482,10 +508,18 @@ export function SettingsPage() {
                   </span>
                 </li>
                 <li>
-                  <Dot s={form.web_enabled ? "ok" : "idle"} /><span className="conn-name">Browser access (phones &amp; kiosks)</span>
-                  <span className="muted small conn-detail">{form.web_enabled ? `port ${form.web_port}` : "off"}</span>
+                  <Dot s={webInfo.running ? "ok" : "idle"} /><span className="conn-name">Browser access (phones &amp; kiosks)</span>
+                  <span className="muted small conn-detail">{webInfo.running ? `port ${webInfo.port}` : "off"}</span>
                   <span className="conn-actions">
-                    <button className="btn small" onClick={async () => { await webStop().catch(() => {}); await webStart(form.web_port).catch(() => {}); }}>Restart</button>
+                    <button className="btn small" onClick={async () => {
+                      setSaveErr("");
+                      try {
+                        if (!settings?.web_enabled || !settings.web_password) throw new Error("Enable Browser Access, set an admin password, and Save first.");
+                        await webStop();
+                        await webStart(settings.web_port);
+                      } catch (e) { setSaveErr(String(e)); }
+                      setWebInfo(await webStatus());
+                    }}>Restart</button>
                   </span>
                 </li>
               </>
@@ -513,6 +547,27 @@ export function SettingsPage() {
             <span>Auto-connect on launch</span>
           </label>
         </div>
+      </section>
+
+      <section className="card">
+        <div className="card-head"><h3 id="set-pp2">propresenter 2</h3></div>
+        <p className="muted small">Connect a second computer running ProPresenter. Its playlists, controls and live status have their own page.</p>
+        <div className="settings-grid">
+          <label className="field"><span>Host / IP</span>
+            <input className="input" value={form.pp2_host ?? ""} placeholder="Second computer’s address"
+              onChange={(e) => set("pp2_host", e.target.value)} />
+          </label>
+          <label className="field"><span>Port</span>
+            <input className="input" type="number" min={1} max={65535} value={form.pp2_port ?? 1025}
+              onChange={(e) => { const n = parseInt(e.target.value); if (Number.isFinite(n)) set("pp2_port", n); }} />
+          </label>
+          <label className="field check">
+            <input type="checkbox" checked={form.pp2_auto_connect ?? false}
+              onChange={(e) => set("pp2_auto_connect", e.target.checked)} />
+            <span>Auto-connect on launch</span>
+          </label>
+        </div>
+        {pp2.connectError && <p className="error">{pp2.connectError}</p>}
       </section>
 
       <section className="card">
@@ -977,7 +1032,7 @@ export function SettingsPage() {
       <section className="card">
         <div className="card-head">
           <h3 id="set-assist">Troubleshooter — Ask ProDeck</h3><HelpLink section="ask-prodeck" />
-          <span className={`chip ${form.assist_api_key ? "online" : ""}`}>{form.assist_api_key ? "on" : "off"}</span>
+          <span className={`chip ${assistReady ? "online" : ""}`}>{assistReady ? "on" : "off"}</span>
         </div>
         <p className="muted small">
           A volunteer types what is wrong in their own words — on a phone under <strong>No sound?</strong> or here under
@@ -986,29 +1041,7 @@ export function SettingsPage() {
           this machine; phones ask through it.
         </p>
         <div className="settings-grid">
-          <label className="field wide">
-            <span>Anthropic API key (console.anthropic.com)</span>
-            <input
-              className="input"
-              type="password"
-              autoComplete="off"
-              placeholder="sk-ant-… — stored only on this machine"
-              value={form.assist_api_key ?? ""}
-              onChange={(e) => set("assist_api_key", e.target.value || null)}
-            />
-          </label>
-          <label className="field">
-            <span>Workspace ID (only for an account-level key)</span>
-            <input className="input" autoComplete="off" placeholder="wrkspc_… — console.anthropic.com → Settings → Workspaces" value={form.assist_workspace_id ?? ""} onChange={(e) => set("assist_workspace_id", e.target.value.trim())} />
-          </label>
-          <label className="field">
-            <span>Model</span>
-            <select className="input" value={form.assist_model || "claude-sonnet-5"} onChange={(e) => set("assist_model", e.target.value)}>
-              <option value="claude-sonnet-5">Claude Sonnet 5 — fast, recommended</option>
-              <option value="claude-opus-5">Claude Opus 5 — deeper, slower</option>
-              <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 — cheapest</option>
-            </select>
-          </label>
+          <AssistProviderFields form={form} set={set} web={IS_WEB} />
           <label className="field">
             <span>Calls per month before it stops (0 = no cap)</span>
             <input className="input" type="number" min={0} value={form.assist_monthly_cap ?? 500} onChange={(e) => set("assist_monthly_cap", Math.max(0, parseInt(e.target.value || "0", 10)))} />
@@ -1019,7 +1052,7 @@ export function SettingsPage() {
           </label>
         </div>
         <p className="muted small" style={{ marginTop: 10 }}>
-          {assist ? `Used ${assist.usedThisMonth} of ${assist.monthlyCap || "∞"} calls this month · model ${assist.model}.` : ""}
+          {assist ? `Used ${assist.usedThisMonth} of ${assist.monthlyCap || "∞"} calls this month · ${assist.provider === "gemini" ? "Gemini" : "Claude"} · model ${assist.model}.` : ""}
           {" "}
           <strong>Knowledge files</strong>: {assist && assist.knowledgeFiles.length ? assist.knowledgeFiles.join(", ") : "none yet"}.
           {" "}Plain markdown about your building, read on every question. Folder:{" "}
@@ -1486,7 +1519,7 @@ export function SettingsPage() {
             Serve the dashboards to phones, tablets, and laptops on the church network.
             They open this Mac's address in a browser and sign in with the password below.
           </p>
-          <CrewInviteLink form={form} set={set} />
+          <CrewInviteLink form={form} set={set} base={browserBaseUrl(form.public_url, lanBrowserUrls(webInfo.hosts, form.web_port))} />
           <AutoCheckin form={form} set={set} />
           <div className="settings-grid">
           <label className="field wide">
@@ -1535,10 +1568,12 @@ export function SettingsPage() {
             {form.web_enabled && form.web_password && (
               <div className="field wide">
                 <span>Open in a browser</span>
-                <code className="web-url">
-                  http://{(form.device_name || "this-mac").replace(/\.local$/i, "")}.local:
-                  {form.web_port}/
-                </code>
+                {lanBrowserUrls(webInfo.hosts, webInfo.running ? webInfo.port : form.web_port).map((url) => (
+                  <code className="web-url" key={url}>{url}/</code>
+                ))}
+                <span className="hint">Use these addresses on the same network. Keep ProDeck open on this Mac.</span>
+                {!webInfo.hosts.length && <span className="error">No network address found. Connect this Mac to Wi-Fi or Ethernet.</span>}
+                <span className="hint">On this Mac only: http://127.0.0.1:{webInfo.running ? webInfo.port : form.web_port}/</span>
               </div>
             )}
           </div>
@@ -1557,7 +1592,7 @@ export function SettingsPage() {
       {!IS_WEB && (
         <>
           <ReliabilityCard />
-          <KioskCard form={form} />
+          <KioskCard form={form} base={browserBaseUrl(form.public_url, lanBrowserUrls(webInfo.hosts, form.web_port))} />
           <BackupCard />
           <HelpCard />
         </>
@@ -2258,19 +2293,21 @@ function AutoCheckin({
 function CrewInviteLink({
   form,
   set,
+  base,
 }: {
   form: Settings;
+  base: string;
   set: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
 }) {
   const [qr, setQr] = useState("");
   const [copied, setCopied] = useState(false);
-  const link = form.web_invite_token
-    ? `${PUBLIC_URL}/?join=${form.web_invite_token}`
+  const link = form.web_invite_token && base
+    ? `${base}/?join=${encodeURIComponent(form.web_invite_token)}`
     : "";
   // The QR/poster encode the tokenless /join redirect, so a printed code
   // survives every rotation; the copyable text link stays on the raw token
   // (rotate to kill texted copies).
-  const posterLink = form.web_invite_token ? `${PUBLIC_URL}/join` : "";
+  const posterLink = form.web_invite_token && base ? `${base}/join` : "";
 
   useEffect(() => {
     if (!posterLink) return setQr("");
@@ -2990,7 +3027,7 @@ function ReliabilityCard() {
 }
 
 /** Kiosk screens: a ready-made URL + QR for an office TV, lobby screen, or switcher PC. */
-function KioskCard({ form }: { form: Settings }) {
+function KioskCard({ form, base }: { form: Settings; base: string }) {
   const [dashes, setDashes] = useState<{ name: string }[]>([]);
   const [name, setName] = useState("");
   const [qr, setQr] = useState("");
@@ -3006,8 +3043,7 @@ function KioskCard({ form }: { form: Settings }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const f = form as any;
   const token = f.web_member_password || "";
-  const base = (f.public_url?.trim?.() as string) || `http://${(f.device_name || "this-mac").replace(/\.local$/i, "")}.local:${f.web_port || 8088}`;
-  const url = name && token ? `${base.replace(/\/+$/, "")}/?kiosk=${encodeURIComponent(name)}&token=${encodeURIComponent(token)}` : "";
+  const url = name && token && base ? `${base.replace(/\/+$/, "")}/?kiosk=${encodeURIComponent(name)}&token=${encodeURIComponent(token)}` : "";
   useEffect(() => {
     if (!url) return setQr("");
     QRCode.toDataURL(url, { margin: 1, width: 180 }).then(setQr).catch(() => setQr(""));
@@ -3024,6 +3060,8 @@ function KioskCard({ form }: { form: Settings }) {
       </p>
       {!f.web_enabled ? (
         <p className="hint">Turn on <strong>Browser Access</strong> above first — kiosks connect through it.</p>
+      ) : !base ? (
+        <p className="hint">Connect this Mac to the network to create kiosk links.</p>
       ) : !token ? (
         <p className="hint">Set a <strong>member password</strong> in Browser Access — kiosk links use it.</p>
       ) : (

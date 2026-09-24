@@ -308,6 +308,9 @@ function deskSnapshot() {
 
 const SETTINGS_OVERLAY: Record<string, unknown> = {
   pp_host: "10.0.1.42",
+  pp2_host: "",
+  pp2_port: 1025,
+  pp2_auto_connect: false,
   pp_port: 51417,
   pp_auto_connect: true,
   // Both halves are needed: the store treats "has credentials" as app id AND
@@ -367,7 +370,7 @@ const OBJECT_CMDS: Record<string, unknown> = {
   pco_live_controller: { controller: null, me: false },
   pp_is_connected: true,
   keysend_state: { enabled: true, midiPort: "Network Lyrics", midiConnected: true, oscHost: "", liveSong: "Great Are You Lord", liveKey: "G", lastKey: "G", lastProgram: 7, lastAt: Date.now() - 120_000, lastBy: "auto" },
-  assist_status: { configured: false, model: "claude-sonnet-5", members: true, usedThisMonth: 0, monthlyCap: 500, knowledgeFiles: [], knowledgeDir: "" },
+  assist_status: { provider: "anthropic", configured: false, model: "claude-sonnet-5", members: true, usedThisMonth: 0, monthlyCap: 500, knowledgeFiles: [], knowledgeDir: "" },
   audio_input_channels: 2,
   default_audio_input: "Demo Input (2ch)",
 };

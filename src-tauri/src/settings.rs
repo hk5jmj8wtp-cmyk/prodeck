@@ -8,6 +8,9 @@ pub struct Settings {
     pub pp_host: String,
     pub pp_port: u16,
     pub pp_auto_connect: bool,
+    pub pp2_host: String,
+    pub pp2_port: u16,
+    pub pp2_auto_connect: bool,
     pub audio_input: Option<String>,
     pub whisper_bin: Option<String>,
     pub whisper_model: Option<String>,
@@ -96,6 +99,8 @@ pub struct Settings {
     /// gateway strips it and pins it on browser round-trips.
     pub assist_api_key: Option<String>,
     pub assist_model: String,
+    pub assist_provider: String,
+    pub assist_gemini_model: String,
     /// Anthropic workspace id (wrkspc_…). Needed only for account-level keys,
     /// which the API refuses without it; a workspace-scoped key leaves it blank.
     pub assist_workspace_id: String,
@@ -192,6 +197,9 @@ pub struct Settings {
     pub lobby_auto_index: u64,
     /// Display label only (what the widget shows as the standing loop).
     pub lobby_auto_name: String,
+    pub pp2_lobby_auto_playlist: String,
+    pub pp2_lobby_auto_index: u64,
+    pub pp2_lobby_auto_name: String,
     /// Auto check-in via geolocation: the building's coordinates + radius in
     /// meters. Both blank = the geo path is off and phones never prompt for
     /// location (the wifi/IP path needs no configuration at all).
@@ -242,6 +250,9 @@ impl Default for Settings {
             pp_host: "localhost".into(),
             pp_port: 1025,
             pp_auto_connect: false,
+            pp2_host: String::new(),
+            pp2_port: 1025,
+            pp2_auto_connect: false,
             audio_input: None,
             whisper_bin: detect_whisper_bin(),
             whisper_model: detect_whisper_model(),
@@ -266,6 +277,8 @@ impl Default for Settings {
             gemini_api_key: None,
             assist_api_key: None,
             assist_model: String::new(),
+            assist_provider: "anthropic".into(),
+            assist_gemini_model: String::new(),
             assist_workspace_id: String::new(),
             assist_members: true,
             assist_monthly_cap: 500,
@@ -304,6 +317,9 @@ impl Default for Settings {
             lobby_auto_playlist: String::new(),
             lobby_auto_index: 0,
             lobby_auto_name: String::new(),
+            pp2_lobby_auto_playlist: String::new(),
+            pp2_lobby_auto_index: 0,
+            pp2_lobby_auto_name: String::new(),
             church_lat: String::new(),
             church_lng: String::new(),
             checkin_radius_m: 150,

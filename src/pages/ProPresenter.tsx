@@ -1,21 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { useProDeck } from "../store";
+import { usePpConnection, usePpClient, usePpInstance } from "../propresenterStore";
 import { ConnectCard } from "../components/ConnectCard";
 import { Icon } from "../components/Icon";
 import { PlaylistControl } from "../components/PlaylistControl";
-import {
-  ppGet,
-  ppNext,
-  ppPrevious,
-  ppTriggerLook,
-  ppTriggerMacro,
-  ppTimerOp,
-  ppTriggerMessage,
-  ppAction,
-  ppSetStageMessage,
-  ppClearStageMessage,
-  type Json,
-} from "../lib/tauri";
+import { IS_WEB, type Json } from "../lib/tauri";
 import { currentTimers } from "../lib/status";
 import { usePco } from "../pcoStore";
 import { SongKeyLeader } from "../components/SongKeyLeader";
@@ -41,7 +29,13 @@ function toItems(json: Json | Json[]): Item[] {
 
 
 export function ProPresenterPage() {
-  const { connected, status } = useProDeck();
+  const { connected, status, label, host, disconnect } = usePpConnection();
+  const instance = usePpInstance();
+  const {
+    ppGet, ppNext, ppPrevious, ppTriggerLook, ppTriggerMacro, ppTimerOp,
+    ppTriggerMessage, ppAction, ppSetStageMessage, ppClearStageMessage,
+  } = usePpClient();
+  const playlistKey = instance === 2 ? "prodeck.pp2Playlist" : "prodeck.ppPlaylist";
   const pco = usePco();
   const [looks, setLooks] = useState<Item[]>([]);
   const [macros, setMacros] = useState<Item[]>([]);
@@ -56,7 +50,7 @@ export function ProPresenterPage() {
   const [stageMsg, setStageMsg] = useState("");
   const [loading, setLoading] = useState(false);
   const [playlistId, setPlaylistId] = useState<string | null>(
-    () => localStorage.getItem("prodeck.ppPlaylist"),
+    () => localStorage.getItem(playlistKey),
   );
 
   const refresh = useCallback(async () => {
@@ -78,7 +72,7 @@ export function ProPresenterPage() {
     } finally {
       setLoading(false);
     }
-  }, [connected]);
+  }, [connected, ppGet]);
 
   useEffect(() => {
     refresh();
@@ -105,7 +99,7 @@ export function ProPresenterPage() {
     read();
     const iv = setInterval(read, 4000);
     return () => clearInterval(iv);
-  }, [connected]);
+  }, [connected, ppGet]);
 
   const liveTimers = currentTimers(status);
   const timerState = (uuid: string) =>
@@ -137,7 +131,7 @@ export function ProPresenterPage() {
     return (
       <div className="page">
         <header className="page-head">
-          <h1>ProPresenter</h1>
+          <h1>{label}</h1>
         </header>
         <div className="center-card">
           <ConnectCard />
@@ -149,12 +143,19 @@ export function ProPresenterPage() {
   return (
     <div className="page">
       <header className="page-head">
-        <h1>ProPresenter</h1>
+        <h1>{label}</h1>
         <button className="btn ghost small" onClick={refresh} disabled={loading}>
           <Icon name="search" size={14} />
           {loading ? "Loading…" : "Refresh"}
         </button>
       </header>
+
+      <section className="card">
+        <div className="card-head">
+          <span className="chip online">Connected · {host}</span>
+          {!IS_WEB && <button className="btn small ghost" onClick={() => disconnect()}>Disconnect</button>}
+        </div>
+      </section>
 
       <section className="card">
         <div className="card-head">
@@ -167,7 +168,7 @@ export function ProPresenterPage() {
           <button className="btn primary icon" onClick={() => ppNext()}>
             Next <Icon name="next" />
           </button>
-          {transportSong && (
+          {instance === 1 && transportSong && (
             <div className="transport-song">
               <span className={`ts-tag ${transportLive ? "live" : ""}`}>
                 {transportLive ? "NOW" : "NEXT SONG"}
@@ -178,7 +179,7 @@ export function ProPresenterPage() {
               <SongKeyLeader item={transportSong} />
             </div>
           )}
-          <KeyStrip compact />
+          {instance === 1 && <KeyStrip compact />}
           {looks.length > 0 && (
             <label className="transport-look">
               <span>Look</span>
@@ -218,8 +219,8 @@ export function ProPresenterPage() {
             selectedId={playlistId}
             onSelect={(id) => {
               setPlaylistId(id);
-              if (id) localStorage.setItem("prodeck.ppPlaylist", id);
-              else localStorage.removeItem("prodeck.ppPlaylist");
+              if (id) localStorage.setItem(playlistKey, id);
+              else localStorage.removeItem(playlistKey);
             }}
           />
         </div>
