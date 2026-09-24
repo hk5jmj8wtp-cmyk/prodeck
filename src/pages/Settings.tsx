@@ -1,3 +1,4 @@
+import { usePpConnection } from "../propresenterStore";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ANCHOR_TOPIC, openHelp } from "../help/nav";
 import { consumeSettingsJump } from "../lib/settingsJump";
@@ -96,6 +97,7 @@ export function SettingsPage() {
     const un = on<{ connected: boolean }>("obs:state", (o) => setObsUp(!!o.connected));
     return () => void un.then((f) => f());
   }, []);
+  const pp2 = usePpConnection(2);
   const relay = useRelay();
   const upd = useUpdater();
   const [form, setForm] = useState<Settings | null>(null);
@@ -347,7 +349,7 @@ export function SettingsPage() {
           "where do I approve someone" one click, not a hunt. */}
       <nav className="set-jump">
         {[
-          { g: "Connections", items: [["ProPresenter", "set-pp"], ["Sound Console", "set-avantis"], ["OBS", "set-obs"], ["Stage feed (NDI)", "set-ndi"], ["LAN Relay", "set-relay"], ...(!IS_WEB ? [["Browser Access", "set-web"]] : [])] },
+          { g: "Connections", items: [["ProPresenter", "set-pp"], ["propresenter 2", "set-pp2"], ["Sound Console", "set-avantis"], ["OBS", "set-obs"], ["Stage feed (NDI)", "set-ndi"], ["LAN Relay", "set-relay"], ...(!IS_WEB ? [["Browser Access", "set-web"]] : [])] },
           { g: "Audio", items: [["Audio & Captions", "set-audio"], ["Alerts", "set-alerts"]] },
           { g: "Crew", items: [["Crew Members", "set-crew"]] },
           { g: "Advanced", items: [["Troubleshooter", "set-assist"], ["Gemini", "set-gemini"], ["Control Inputs", "set-inputs"], ["Song Key", "set-songkey"], ["TapLink", "set-taplink"]] },
@@ -449,6 +451,14 @@ export function SettingsPage() {
                   </span>
                 </li>
                 <li>
+                  <Dot s={pp2.connected ? "ok" : form.pp2_host ? "bad" : "idle"} /><span className="conn-name">propresenter 2</span>
+                  <span className="muted small conn-detail">{pp2.connected ? pp2.host : pp2.ppConnecting ? "connecting…" : "not connected"}</span>
+                  {!IS_WEB && <span className="conn-actions">
+                    <button className="btn small" disabled={!form.pp2_host || pp2.ppConnecting} onClick={() => pp2.connect(form.pp2_host, form.pp2_port).catch(() => {})}>Reconnect</button>
+                    {pp2.connected && <button className="btn small ghost" onClick={() => pp2.disconnect()}>Disconnect</button>}
+                  </span>}
+                </li>
+                <li>
                   <Dot s={st("pco")} /><span className="conn-name">Planning Center</span>
                   <span className="muted small conn-detail">{health.find((h) => h.key === "pco")?.detail ?? ""}</span>
                   <span className="conn-actions">
@@ -513,6 +523,27 @@ export function SettingsPage() {
             <span>Auto-connect on launch</span>
           </label>
         </div>
+      </section>
+
+      <section className="card">
+        <div className="card-head"><h3 id="set-pp2">propresenter 2</h3></div>
+        <p className="muted small">Connect a second computer running ProPresenter. Its playlists, controls and live status have their own page.</p>
+        <div className="settings-grid">
+          <label className="field"><span>Host / IP</span>
+            <input className="input" value={form.pp2_host ?? ""} placeholder="Second computer’s address"
+              onChange={(e) => set("pp2_host", e.target.value)} />
+          </label>
+          <label className="field"><span>Port</span>
+            <input className="input" type="number" min={1} max={65535} value={form.pp2_port ?? 1025}
+              onChange={(e) => { const n = parseInt(e.target.value); if (Number.isFinite(n)) set("pp2_port", n); }} />
+          </label>
+          <label className="field check">
+            <input type="checkbox" checked={form.pp2_auto_connect ?? false}
+              onChange={(e) => set("pp2_auto_connect", e.target.checked)} />
+            <span>Auto-connect on launch</span>
+          </label>
+        </div>
+        {pp2.connectError && <p className="error">{pp2.connectError}</p>}
       </section>
 
       <section className="card">

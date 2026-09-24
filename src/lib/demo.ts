@@ -308,6 +308,9 @@ function deskSnapshot() {
 
 const SETTINGS_OVERLAY: Record<string, unknown> = {
   pp_host: "10.0.1.42",
+  pp2_host: "",
+  pp2_port: 1025,
+  pp2_auto_connect: false,
   pp_port: 51417,
   pp_auto_connect: true,
   // Both halves are needed: the store treats "has credentials" as app id AND

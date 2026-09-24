@@ -259,6 +259,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(Arc::new(AsyncMutex::new(None::<propresenter::ProPresenterConnection>))
             as propresenter::ProPresenterState)
+        .manage(propresenter::ProPresenter2State::default())
         .manage(Arc::new(AsyncMutex::new(ndi::NdiManager::new())) as ndi::NdiState)
         .manage(Arc::new(AsyncMutex::new(relay::RelayManager::new())) as relay::RelayState)
         .manage(Mutex::new(loaded_settings) as settings::SettingsState)

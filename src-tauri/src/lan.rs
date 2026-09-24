@@ -63,6 +63,9 @@ fn lan_targets(settings: &SettingsState) -> Vec<(String, String)> {
     if !s.pp_host.trim().is_empty() {
         out.push(("ProPresenter".into(), format!("{}:{}", s.pp_host.trim(), s.pp_port)));
     }
+    if !s.pp2_host.trim().is_empty() {
+        out.push(("propresenter 2".into(), format!("{}:{}", s.pp2_host.trim(), s.pp2_port)));
+    }
     if s.avantis_enabled && !s.avantis_host.trim().is_empty() {
         out.push(("Sound desk".into(), format!("{}:{}", s.avantis_host.trim(), s.avantis_port)));
     }

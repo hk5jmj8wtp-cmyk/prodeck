@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { useProDeck } from "../store";
-import { ppClearLayer } from "../lib/tauri";
+import { usePpConnection, usePpClient, usePpInstance } from "../propresenterStore";
 import { Icon } from "./Icon";
 
 // ProPresenter clear layers (same keys the API accepts via /v1/clear/layer/{key}).
@@ -18,7 +17,9 @@ const CLEAR_LAYERS = [
 // every page while ProPresenter is connected, so the operator can always blank
 // the screen (or a single layer) no matter where they are in the app.
 export function ClearDock() {
-  const { connected } = useProDeck();
+  const { connected, label } = usePpConnection();
+  const { ppClearLayer } = usePpClient();
+  const instance = usePpInstance();
   const [open, setOpen] = useState(
     () => localStorage.getItem("prodeck.clearDock") !== "0",
   );
@@ -77,7 +78,7 @@ export function ClearDock() {
       </button>
       {open && (
         <div className="clear-dock-body">
-          <span className="cd-title">Clear</span>
+          <span className="cd-title">{instance === 2 ? label : "Clear"}</span>
           <button
             className={`cd-btn all ${flash === "all" ? "flash" : ""}`}
             onClick={clearAll}

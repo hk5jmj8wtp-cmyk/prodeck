@@ -44,6 +44,7 @@ import "./mobile/mobile.css";
 const IS_PHONE =
   IS_WEB && typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches;
 import { ProDeckProvider, useProDeck } from "./store";
+import { ProPresenter2Provider, ProPresenterScope } from "./propresenterStore";
 import { PcoProvider } from "./pcoStore";
 import { TrackingProvider } from "./trackingStore";
 import { AlertsProvider, useAlerts } from "./alertsStore";
@@ -75,6 +76,7 @@ type Page =
   | "dashboard"
   | "setup"
   | "propresenter"
+  | "propresenter2"
   | "multiview"
   | "captions"
   | "planning"
@@ -92,6 +94,7 @@ const NAV: { id: Page; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "dashboard" },
   { id: "setup", label: "Setup", icon: "checklist" },
   { id: "propresenter", label: "ProPresenter", icon: "slides" },
+  { id: "propresenter2", label: "propresenter 2", icon: "slides" },
   { id: "planning", label: "Planning Center", icon: "calendar" },
   { id: "checklists", label: "Checklists", icon: "checklist" },
   { id: "routing", label: "Routing", icon: "grid" },
@@ -334,12 +337,13 @@ function Shell() {
         )}
         <AlertStack />
         <ControlToast />
-        <ClearDock />
+        <ProPresenterScope instance={page === "propresenter2" ? 2 : 1}><ClearDock key={page === "propresenter2" ? 2 : 1} /></ProPresenterScope>
         <DialogHost />
         <ChatDrawer />
         {page === "dashboard" && <Dashboard onNavigate={setPage} />}
         {page === "setup" && <Setup onNavigate={(p) => setPage(p as Page)} />}
         {page === "propresenter" && <ProPresenterPage />}
+        {page === "propresenter2" && <ProPresenterScope instance={2}><ProPresenterPage /></ProPresenterScope>}
         {page === "multiview" && <Multiview />}
         {page === "captions" && <Captions />}
         {page === "planning" && <PlanningCenter />}
@@ -408,7 +412,7 @@ function ControlToast() {
   return (
     <div className="control-toast" onClick={() => setMsg(null)}>
       <span className="alert-dot" />
-      <span>Couldn’t reach ProPresenter — {msg}</span>
+      <span>ProPresenter control failed — {msg}</span>
     </div>
   );
 }
@@ -630,6 +634,7 @@ export default function App() {
       <UpdaterProvider>
         <RelayProvider>
           <ProDeckProvider>
+          <ProPresenter2Provider>
             <PcoProvider>
               <TrackingProvider>
                 <LyricFollowProvider>
@@ -659,6 +664,7 @@ export default function App() {
                 </LyricFollowProvider>
               </TrackingProvider>
             </PcoProvider>
+          </ProPresenter2Provider>
           </ProDeckProvider>
         </RelayProvider>
       </UpdaterProvider>

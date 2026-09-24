@@ -40,6 +40,27 @@ impl ProPresenterConnection {
 
 pub type ProPresenterState = Arc<Mutex<Option<ProPresenterConnection>>>;
 
+/// Separate managed type: Tauri keys state by type, so a second alias would
+/// silently share the first connection.
+#[derive(Default)]
+pub struct ProPresenter2State(pub ProPresenterState);
+
+pub(crate) fn select_state(
+    primary: &ProPresenterState,
+    secondary: &ProPresenter2State,
+    instance: Option<u8>,
+) -> Result<ProPresenterState, String> {
+    match instance.unwrap_or(1) {
+        1 => Ok(primary.clone()),
+        2 => Ok(secondary.0.clone()),
+        _ => Err("Unknown ProPresenter instance".into()),
+    }
+}
+
+fn event_name(instance: Option<u8>, event: &str) -> String {
+    format!("{}:{event}", if instance == Some(2) { "pp2" } else { "pp" })
+}
+
 pub(crate) async fn current_config(
     state: &ProPresenterState,
 ) -> Result<(reqwest::Client, String), String> {
@@ -76,8 +97,11 @@ async fn try_version(
 pub async fn pp_connect(
     config: ProPresenterConfig,
     state: tauri::State<'_, ProPresenterState>,
+    secondary: tauri::State<'_, ProPresenter2State>,
+    instance: Option<u8>,
     app: AppHandle,
 ) -> Result<serde_json::Value, String> {
+    let state = select_state(&state, &secondary, instance)?;
     // No connection pooling, for the same reason as the health probe below:
     // ProPresenter drops idle keep-alives within a few seconds, so a pooled
     // connection is usually dead by the time the next command reuses it. The
@@ -136,7 +160,7 @@ pub async fn pp_connect(
         .connect_timeout(std::time::Duration::from_secs(4))
         .build()
         .map_err(|e| e.to_string())?;
-    let tasks = spawn_status_streams(&stream_client, &cfg, app.clone());
+    let tasks = spawn_status_streams(&stream_client, &cfg, app.clone(), instance);
 
     {
         let mut s = state.lock().await;
@@ -147,26 +171,39 @@ pub async fn pp_connect(
         });
     }
 
-    app.emit("pp:connected", &cfg).ok();
+    app.emit(&event_name(instance, "connected"), &cfg).ok();
     Ok(version)
+}
+
+async fn close_connection(state: &ProPresenterState) {
+    let mut s = state.lock().await;
+    if let Some(mut c) = s.take() {
+        c.abort();
+    }
 }
 
 #[tauri::command]
 pub async fn pp_disconnect(
     state: tauri::State<'_, ProPresenterState>,
+    secondary: tauri::State<'_, ProPresenter2State>,
+    instance: Option<u8>,
     app: AppHandle,
 ) -> Result<(), String> {
-    let mut s = state.lock().await;
-    if let Some(mut c) = s.take() {
-        c.abort();
-    }
-    app.emit("pp:disconnected", ()).ok();
+    let state = select_state(&state, &secondary, instance)?;
+    close_connection(&state).await;
+    app.emit(&event_name(instance, "disconnected"), ()).ok();
     Ok(())
 }
 
 #[tauri::command]
-pub async fn pp_is_connected(state: tauri::State<'_, ProPresenterState>) -> Result<bool, String> {
-    Ok(state.lock().await.is_some())
+pub async fn pp_is_connected(
+    state: tauri::State<'_, ProPresenterState>,
+    secondary: tauri::State<'_, ProPresenter2State>,
+    instance: Option<u8>,
+) -> Result<bool, String> {
+    let state = select_state(&state, &secondary, instance)?;
+    let connected = state.lock().await.is_some();
+    Ok(connected)
 }
 
 // ---------------------------------------------------------------------------
@@ -177,7 +214,10 @@ pub async fn pp_is_connected(state: tauri::State<'_, ProPresenterState>) -> Resu
 pub async fn pp_get(
     path: String,
     state: tauri::State<'_, ProPresenterState>,
+    secondary: tauri::State<'_, ProPresenter2State>,
+    instance: Option<u8>,
 ) -> Result<serde_json::Value, String> {
+    let state = select_state(&state, &secondary, instance)?;
     let (client, base) = current_config(&state).await?;
     let url = format!("{}/v1/{}", base, path.trim_start_matches('/'));
     let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
@@ -194,7 +234,10 @@ pub async fn pp_put(
     path: String,
     body: Option<serde_json::Value>,
     state: tauri::State<'_, ProPresenterState>,
+    secondary: tauri::State<'_, ProPresenter2State>,
+    instance: Option<u8>,
 ) -> Result<(), String> {
+    let state = select_state(&state, &secondary, instance)?;
     let (client, base) = current_config(&state).await?;
     let url = format!("{}/v1/{}", base, path.trim_start_matches('/'));
     let mut req = client.put(&url);
@@ -209,10 +252,17 @@ pub async fn pp_put(
 pub async fn pp_delete(
     path: String,
     state: tauri::State<'_, ProPresenterState>,
+    secondary: tauri::State<'_, ProPresenter2State>,
+    instance: Option<u8>,
 ) -> Result<(), String> {
+    let state = select_state(&state, &secondary, instance)?;
     let (client, base) = current_config(&state).await?;
     let url = format!("{}/v1/{}", base, path.trim_start_matches('/'));
-    client.delete(&url).send().await.map_err(|e| e.to_string())?;
+    client
+        .delete(&url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -236,7 +286,12 @@ fn ensure_ok(resp: reqwest::Response) -> Result<(), String> {
 macro_rules! get_cmd {
     ($name:ident, $path:expr) => {
         #[tauri::command]
-        pub async fn $name(state: tauri::State<'_, ProPresenterState>) -> Result<(), String> {
+        pub async fn $name(
+            state: tauri::State<'_, ProPresenterState>,
+            secondary: tauri::State<'_, ProPresenter2State>,
+            instance: Option<u8>,
+        ) -> Result<(), String> {
+            let state = select_state(&state, &secondary, instance)?;
             let (client, base) = current_config(&state).await?;
             let resp = client
                 .get(format!("{}{}", base, $path))
@@ -258,12 +313,19 @@ get_cmd!(pp_trigger_previous, "/v1/trigger/previous");
 pub async fn pp_action(
     path: String,
     state: tauri::State<'_, ProPresenterState>,
+    secondary: tauri::State<'_, ProPresenter2State>,
+    instance: Option<u8>,
 ) -> Result<(), String> {
+    let state = select_state(&state, &secondary, instance)?;
     let (client, base) = current_config(&state).await?;
     let url = format!("{}/v1/{}", base, path.trim_start_matches('/'));
     let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
-        return Err(format!("ProPresenter returned {} for {}", resp.status(), path));
+        return Err(format!(
+            "ProPresenter returned {} for {}",
+            resp.status(),
+            path
+        ));
     }
     Ok(())
 }
@@ -272,7 +334,10 @@ pub async fn pp_action(
 pub async fn pp_clear_layer(
     layer: String,
     state: tauri::State<'_, ProPresenterState>,
+    secondary: tauri::State<'_, ProPresenter2State>,
+    instance: Option<u8>,
 ) -> Result<(), String> {
+    let state = select_state(&state, &secondary, instance)?;
     let (client, base) = current_config(&state).await?;
     let resp = client
         .get(format!("{}/v1/clear/layer/{}", base, layer))
@@ -286,10 +351,17 @@ pub async fn pp_clear_layer(
 pub async fn pp_trigger_macro(
     id: String,
     state: tauri::State<'_, ProPresenterState>,
+    secondary: tauri::State<'_, ProPresenter2State>,
+    instance: Option<u8>,
 ) -> Result<(), String> {
+    let state = select_state(&state, &secondary, instance)?;
     let (client, base) = current_config(&state).await?;
     let resp = client
-        .get(format!("{}/v1/macro/{}/trigger", base, urlencoding::encode(&id)))
+        .get(format!(
+            "{}/v1/macro/{}/trigger",
+            base,
+            urlencoding::encode(&id)
+        ))
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -300,10 +372,17 @@ pub async fn pp_trigger_macro(
 pub async fn pp_trigger_look(
     id: String,
     state: tauri::State<'_, ProPresenterState>,
+    secondary: tauri::State<'_, ProPresenter2State>,
+    instance: Option<u8>,
 ) -> Result<(), String> {
+    let state = select_state(&state, &secondary, instance)?;
     let (client, base) = current_config(&state).await?;
     let resp = client
-        .get(format!("{}/v1/look/{}/trigger", base, urlencoding::encode(&id)))
+        .get(format!(
+            "{}/v1/look/{}/trigger",
+            base,
+            urlencoding::encode(&id)
+        ))
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -315,7 +394,10 @@ pub async fn pp_timer_op(
     id: String,
     op: String, // "start" | "stop" | "reset"
     state: tauri::State<'_, ProPresenterState>,
+    secondary: tauri::State<'_, ProPresenter2State>,
+    instance: Option<u8>,
 ) -> Result<(), String> {
+    let state = select_state(&state, &secondary, instance)?;
     let (client, base) = current_config(&state).await?;
     let resp = client
         .get(format!(
@@ -334,7 +416,10 @@ pub async fn pp_timer_op(
 pub async fn pp_set_stage_message(
     message: String,
     state: tauri::State<'_, ProPresenterState>,
+    secondary: tauri::State<'_, ProPresenter2State>,
+    instance: Option<u8>,
 ) -> Result<(), String> {
+    let state = select_state(&state, &secondary, instance)?;
     let (client, base) = current_config(&state).await?;
     let resp = client
         .put(format!("{}/v1/stage/message", base))
@@ -348,7 +433,10 @@ pub async fn pp_set_stage_message(
 #[tauri::command]
 pub async fn pp_clear_stage_message(
     state: tauri::State<'_, ProPresenterState>,
+    secondary: tauri::State<'_, ProPresenter2State>,
+    instance: Option<u8>,
 ) -> Result<(), String> {
+    let state = select_state(&state, &secondary, instance)?;
     let (client, base) = current_config(&state).await?;
     let resp = client
         .delete(format!("{}/v1/stage/message", base))
@@ -365,7 +453,10 @@ pub async fn pp_thumbnail(
     index: u32,
     quality: Option<u32>,
     state: tauri::State<'_, ProPresenterState>,
+    secondary: tauri::State<'_, ProPresenter2State>,
+    instance: Option<u8>,
 ) -> Result<String, String> {
+    let state = select_state(&state, &secondary, instance)?;
     let (client, base) = current_config(&state).await?;
     let q = quality.unwrap_or(400);
     let url = format!(
@@ -396,7 +487,10 @@ pub async fn pp_playlist_thumbnail(
     cue_index: u32,
     quality: Option<u32>,
     state: tauri::State<'_, ProPresenterState>,
+    secondary: tauri::State<'_, ProPresenter2State>,
+    instance: Option<u8>,
 ) -> Result<String, String> {
+    let state = select_state(&state, &secondary, instance)?;
     let (client, base) = current_config(&state).await?;
     let q = quality.unwrap_or(400);
     let url = format!(
@@ -467,6 +561,7 @@ fn spawn_status_streams(
     client: &reqwest::Client,
     config: &ProPresenterConfig,
     app: AppHandle,
+    instance: Option<u8>,
 ) -> Vec<JoinHandle<()>> {
     // (stream name, endpoint path)
     let endpoints = [
@@ -488,9 +583,7 @@ fn spawn_status_streams(
     // When did any stream last deliver data? Recorded for diagnostics only —
     // silence is NOT a death signal, because ProPresenter only pushes on
     // change. See the health probe below.
-    let last_ok = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(
-        crate::identity::now_ms(),
-    ));
+    let last_ok = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(crate::identity::now_ms()));
 
     let mut handles: Vec<tokio::task::JoinHandle<()>> = endpoints
         .iter()
@@ -502,11 +595,12 @@ fn spawn_status_streams(
             let last_ok = last_ok.clone();
             tokio::spawn(async move {
                 loop {
-                    if let Err(e) = stream_one(&client, &url, &name, &app, &last_ok).await {
+                    if let Err(e) = stream_one(&client, &url, &name, &app, &last_ok, instance).await
+                    {
                         // Surface transient errors but keep retrying so the UI
                         // recovers automatically when ProPresenter comes back.
                         app.emit(
-                            "pp:stream_error",
+                            &event_name(instance, "stream_error"),
                             serde_json::json!({ "stream": name, "error": e }),
                         )
                         .ok();
@@ -587,11 +681,12 @@ fn spawn_status_streams(
                 match gate.observe(alive) {
                     Health::Dead => {
                         crate::diag::log("[pp] health probe failed twice — reporting disconnected");
-                        app.emit("pp:disconnected", ()).ok();
+                        app.emit(&event_name(instance, "disconnected"), ()).ok();
                     }
                     Health::Alive => {
                         crate::diag::log("[pp] health probe recovered — reporting connected");
-                        app.emit("pp:connected", serde_json::json!({})).ok();
+                        app.emit(&event_name(instance, "connected"), serde_json::json!({}))
+                            .ok();
                     }
                     Health::Nothing => {}
                 }
@@ -607,6 +702,7 @@ async fn stream_one(
     name: &str,
     app: &AppHandle,
     last_ok: &std::sync::atomic::AtomicU64,
+    instance: Option<u8>,
 ) -> Result<(), String> {
     let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
     let mut stream = resp.bytes_stream();
@@ -622,17 +718,19 @@ async fn stream_one(
         chunker.push(&text, &mut objects);
         for obj in objects {
             if let Ok(value) = serde_json::from_str::<serde_json::Value>(&obj) {
-                if name == "current_slide" {
-                    crate::tap::on_slide(app, &value).await;
-                } else if name == "active_presentation" {
-                    crate::tap::on_active_presentation(app, &value).await;
-                } else if name == "active_announcement" {
-                    crate::tap::on_active_announcement(app, &value).await;
-                } else if name == "announcement_slide_index" {
-                    crate::tap::on_announcement_index(app, &value).await;
+                if instance != Some(2) {
+                    if name == "current_slide" {
+                        crate::tap::on_slide(app, &value).await;
+                    } else if name == "active_presentation" {
+                        crate::tap::on_active_presentation(app, &value).await;
+                    } else if name == "active_announcement" {
+                        crate::tap::on_active_announcement(app, &value).await;
+                    } else if name == "announcement_slide_index" {
+                        crate::tap::on_announcement_index(app, &value).await;
+                    }
                 }
                 app.emit(
-                    "pp:status",
+                    &event_name(instance, "status"),
                     serde_json::json!({ "stream": name, "data": value }),
                 )
                 .ok();
@@ -726,13 +824,18 @@ pub fn spawn_lobby_auto(app: tauri::AppHandle) {
                 .send()
                 .await;
             let Ok(resp) = active else { continue };
-            let Ok(v) = resp.json::<serde_json::Value>().await else { continue };
+            let Ok(v) = resp.json::<serde_json::Value>().await else {
+                continue;
+            };
             let is_dark = v.get("announcement").map(|a| a.is_null()).unwrap_or(false);
             if !is_dark {
                 continue;
             }
             let _ = client
-                .get(format!("{}/v1/playlist/{}/{}/trigger", base, playlist, index))
+                .get(format!(
+                    "{}/v1/playlist/{}/{}/trigger",
+                    base, playlist, index
+                ))
                 .send()
                 .await;
         }
@@ -752,7 +855,9 @@ pub fn spawn_announcement_poll(app: tauri::AppHandle) {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             n = n.wrapping_add(1);
             let state = app.state::<ProPresenterState>().inner().clone();
-            let Ok((client, base)) = current_config(&state).await else { continue };
+            let Ok((client, base)) = current_config(&state).await else {
+                continue;
+            };
             // The DECK BODY (slide notes → keywords) also needs polling: the
             // stream only sends announcement/active on a trigger, so a loop
             // already running when ProDeck starts leaves the keyword table
@@ -776,7 +881,9 @@ pub fn spawn_announcement_poll(app: tauri::AppHandle) {
             else {
                 continue;
             };
-            let Ok(v) = resp.json::<serde_json::Value>().await else { continue };
+            let Ok(v) = resp.json::<serde_json::Value>().await else {
+                continue;
+            };
             crate::tap::on_announcement_index(&app, &v).await;
 
             // The PRESENTATION layer's live slide, for the same reason: the
@@ -862,5 +969,160 @@ mod health_tests {
         for i in 0..50 {
             assert_eq!(g.observe(i % 2 == 0), Health::Nothing, "flapped at {i}");
         }
+    }
+}
+
+#[cfg(test)]
+mod instance_tests {
+    use super::*;
+    use tauri::Manager;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    async fn fake_connection(
+        label: &'static str,
+    ) -> (
+        ProPresenterState,
+        tokio::sync::mpsc::UnboundedReceiver<String>,
+    ) {
+        let server = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = server.local_addr().unwrap().port();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let task = tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = server.accept().await.unwrap();
+                let mut bytes = [0; 4096];
+                let n = stream.read(&mut bytes).await.unwrap();
+                tx.send(
+                    String::from_utf8_lossy(&bytes[..n])
+                        .lines()
+                        .next()
+                        .unwrap()
+                        .to_string(),
+                )
+                .unwrap();
+                let body = format!("{{\"machine\":\"{label}\"}}");
+                let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+                stream.write_all(response.as_bytes()).await.unwrap();
+            }
+        });
+        (
+            Arc::new(Mutex::new(Some(ProPresenterConnection {
+                config: ProPresenterConfig {
+                    host: "127.0.0.1".into(),
+                    port,
+                },
+                client: reqwest::Client::new(),
+                tasks: vec![task],
+            }))),
+            rx,
+        )
+    }
+
+    #[tokio::test]
+    async fn actions_reads_and_thumbnails_reach_only_the_selected_machine() {
+        let (first, mut first_requests) = fake_connection("first").await;
+        let (second, mut second_requests) = fake_connection("second").await;
+        let app = tauri::test::mock_builder()
+            .manage(first.clone())
+            .manage(ProPresenter2State(second.clone()))
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let a = pp_get("looks".into(), app.state(), app.state(), None)
+            .await
+            .unwrap();
+        let b = pp_get("looks".into(), app.state(), app.state(), Some(2))
+            .await
+            .unwrap();
+        assert_eq!(a["machine"], "first");
+        assert_eq!(b["machine"], "second");
+        assert_eq!(
+            first_requests.recv().await.unwrap(),
+            "GET /v1/looks HTTP/1.1"
+        );
+        assert_eq!(
+            second_requests.recv().await.unwrap(),
+            "GET /v1/looks HTTP/1.1"
+        );
+        pp_action("trigger/next".into(), app.state(), app.state(), Some(2))
+            .await
+            .unwrap();
+        assert_eq!(
+            second_requests.recv().await.unwrap(),
+            "GET /v1/trigger/next HTTP/1.1"
+        );
+        assert!(first_requests.try_recv().is_err());
+        let image = pp_playlist_thumbnail(
+            "shared-id".into(),
+            0,
+            1,
+            Some(640),
+            app.state(),
+            app.state(),
+            Some(2),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            second_requests.recv().await.unwrap(),
+            "GET /v1/playlist/shared-id/0/thumbnail/1?quality=640 HTTP/1.1"
+        );
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(image.split(',').nth(1).unwrap())
+            .unwrap();
+        assert_eq!(
+            String::from_utf8(decoded).unwrap(),
+            "{\"machine\":\"second\"}"
+        );
+        assert!(first_requests.try_recv().is_err());
+        close_connection(&first).await;
+        close_connection(&second).await;
+    }
+
+    #[tokio::test]
+    async fn disconnect_second_leaves_first_usable_and_never_falls_back() {
+        let (first, mut requests) = fake_connection("first").await;
+        let (second, _) = fake_connection("second").await;
+        let second = ProPresenter2State(second);
+        let target = select_state(&first, &second, Some(2)).unwrap();
+        let abort = target.lock().await.as_ref().unwrap().tasks[0].abort_handle();
+        close_connection(&target).await;
+        tokio::task::yield_now().await;
+        assert!(abort.is_finished());
+        assert!(
+            current_config(&select_state(&first, &second, Some(2)).unwrap())
+                .await
+                .is_err()
+        );
+        let (client, base) = current_config(&select_state(&first, &second, None).unwrap())
+            .await
+            .unwrap();
+        client
+            .get(format!("{base}/v1/trigger/next"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            requests.recv().await.unwrap(),
+            "GET /v1/trigger/next HTTP/1.1"
+        );
+        assert!(select_state(&first, &second, Some(3)).is_err());
+        close_connection(&first).await;
+    }
+
+    #[test]
+    fn streams_have_separate_event_names_and_old_settings_disable_second() {
+        for event in ["connected", "disconnected", "status", "stream_error"] {
+            assert_eq!(event_name(None, event), format!("pp:{event}"));
+            assert_eq!(event_name(Some(2), event), format!("pp2:{event}"));
+        }
+        let old: crate::settings::Settings = serde_json::from_value(
+            serde_json::json!({"pp_host":"booth.local","pp_auto_connect":true}),
+        )
+        .unwrap();
+        assert_eq!(old.pp_host, "booth.local");
+        assert!(old.pp_auto_connect);
+        assert!(old.pp2_host.is_empty());
+        assert_eq!(old.pp2_port, 1025);
+        assert!(!old.pp2_auto_connect);
     }
 }

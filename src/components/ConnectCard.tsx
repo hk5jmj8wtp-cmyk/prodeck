@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useProDeck } from "../store";
+import { usePpConnection } from "../propresenterStore";
 import {
   diagLocalNetwork,
   discoverServices,
@@ -11,8 +11,8 @@ import {
 import { Icon } from "./Icon";
 
 export function ConnectCard() {
-  const { connected, host: connectedHost, connect, disconnect, connectError, settings, ppConnecting } =
-    useProDeck();
+  const { connected, host: connectedHost, connect, disconnect, connectError, savedHost, savedPort, label, ppConnecting } =
+    usePpConnection();
   const [host, setHost] = useState("localhost");
   const [port, setPort] = useState(1025);
   const [scanning, setScanning] = useState(false);
@@ -43,11 +43,9 @@ export function ConnectCard() {
   }, [connected, ppConnecting]);
 
   useEffect(() => {
-    if (settings) {
-      setHost(settings.pp_host);
-      setPort(settings.pp_port);
-    }
-  }, [settings]);
+    setHost(savedHost);
+    setPort(savedPort);
+  }, [savedHost, savedPort]);
 
   // Choose the most reliable host from a discovered service: IPv4 first, then
   // the .local hostname (resolves via mDNS on macOS), then any address.
@@ -84,7 +82,7 @@ export function ConnectCard() {
     return (
       <div className="card connect-card">
         <div className="card-head">
-          <h3>ProPresenter</h3>
+          <h3>{label}</h3>
           <span className="chip online">Connected</span>
         </div>
         <p className="muted">{connectedHost}</p>
@@ -101,7 +99,7 @@ export function ConnectCard() {
     return (
       <div className="card connect-card">
         <div className="card-head">
-          <h3>ProPresenter</h3>
+          <h3>{label}</h3>
           <span className="chip">Not connected</span>
         </div>
         <p className="muted">
@@ -121,11 +119,11 @@ export function ConnectCard() {
     return (
       <div className="card connect-card">
         <div className="card-head">
-          <h3>ProPresenter</h3>
+          <h3>{label}</h3>
           <span className="chip">Connecting…</span>
         </div>
         <p className="muted">
-          Reaching {settings?.pp_host || "ProPresenter"} — this usually takes a
+          Reaching {savedHost || label} — this usually takes a
           few seconds after ProDeck starts.
         </p>
         <button className="btn ghost small" onClick={scan} disabled={scanning}>
@@ -139,7 +137,7 @@ export function ConnectCard() {
   return (
     <div className="card connect-card">
       <div className="card-head">
-        <h3>Connect to ProPresenter</h3>
+        <h3>Connect to {label}</h3>
       </div>
 
       {/* Finding it is the happy path; typing an IP is the fallback. */}

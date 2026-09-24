@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { ppThumbnail, ppPlaylistThumbnail } from "../lib/tauri";
+import { usePpClient, usePpInstance } from "../propresenterStore";
+import { createPpClient, type ProPresenterInstance } from "../lib/tauri";
 
 interface Props {
   uuid: string | null;
@@ -31,10 +32,11 @@ const thumbKey = (
   index: number,
   playlistId: string | null,
   itemIndex: number | null,
+  instance: ProPresenterInstance,
 ) =>
   !!playlistId && itemIndex != null && itemIndex >= 0
-    ? `pl:${playlistId}:${itemIndex}:${index}:${QUALITY}`
-    : `${uuid}:${index}:${QUALITY}`;
+    ? `pp${instance}:pl:${playlistId}:${itemIndex}:${index}:${QUALITY}`
+    : `pp${instance}:${uuid}:${index}:${QUALITY}`;
 
 // Cap concurrent thumbnail fetches so a spacious "all songs open" view can't
 // flood ProPresenter with hundreds of requests at once (which starves slide
@@ -60,17 +62,19 @@ async function getThumb(
   index: number,
   playlistId: string | null,
   itemIndex: number | null,
+  instance: ProPresenterInstance,
+  client: ReturnType<typeof createPpClient>,
 ): Promise<string | null> {
   if (index < 0) return null;
   const usePl = !!playlistId && itemIndex != null && itemIndex >= 0;
-  const k = thumbKey(uuid, index, playlistId, itemIndex);
+  const k = thumbKey(uuid, index, playlistId, itemIndex, instance);
   const hit = cache.get(k);
   if (hit) return hit;
   await acquire();
   try {
     const data = usePl
-      ? await ppPlaylistThumbnail(playlistId!, itemIndex!, index, QUALITY)
-      : await ppThumbnail(uuid, index, QUALITY);
+      ? await client.ppPlaylistThumbnail(playlistId!, itemIndex!, index, QUALITY)
+      : await client.ppThumbnail(uuid, index, QUALITY);
     cachePut(k, data);
     return data;
   } catch {
@@ -88,6 +92,8 @@ export function SlideThumb({
   label,
   className,
 }: Props) {
+  const instance = usePpInstance();
+  const client = usePpClient();
   const [src, setSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -117,13 +123,13 @@ export function SlideThumb({
       if (!uuid) setSrc(null);
       return;
     }
-    const cached = cache.get(thumbKey(uuid, index, playlistId, itemIndex));
+    const cached = cache.get(thumbKey(uuid, index, playlistId, itemIndex, instance));
     if (cached) {
       setSrc(cached);
       return;
     }
     let cancelled = false;
-    getThumb(uuid, index, playlistId, itemIndex).then((d) => {
+    getThumb(uuid, index, playlistId, itemIndex, instance, client).then((d) => {
       if (cancelled) return;
       if (d) setSrc(d);
       else {
@@ -134,7 +140,7 @@ export function SlideThumb({
     return () => {
       cancelled = true;
     };
-  }, [visible, uuid, index, playlistId, itemIndex]);
+  }, [visible, uuid, index, playlistId, itemIndex, instance, client]);
 
   return (
     <div className={`slide-thumb ${className ?? ""}`} ref={wrapRef}>
