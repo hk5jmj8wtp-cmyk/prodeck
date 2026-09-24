@@ -1698,7 +1698,11 @@ async fn dispatch(
             let id = s("id").ok_or("missing id")?;
             let value = args.get("value").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
             let state = app.state::<crate::avantis::AvantisState>();
-            crate::avantis::avantis_set_fader(id, value, state, app.clone()).await?;
+            let db = match args.get("db").filter(|v| !v.is_null()) {
+                Some(v) => Some(v.as_f64().ok_or("db must be a number")? as f32),
+                None => None,
+            };
+            crate::avantis::avantis_set_fader(id, value, db, state, app.clone()).await?;
             Ok(json!({ "ok": true }))
         }
         "avantis_set_name" => {

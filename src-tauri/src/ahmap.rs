@@ -18,6 +18,8 @@ pub enum DeskModel {
     Sq,
     /// Behringer X32 / Midas M32 — OSC over UDP, not MIDI over TCP.
     X32,
+    /// DiGiCo S31 — S-Series general-purpose OSC (firmware 3+).
+    S31,
 }
 
 impl DeskModel {
@@ -26,6 +28,7 @@ impl DeskModel {
             "dlive" => DeskModel::DLive,
             "sq" | "sq5" | "sq6" | "sq7" | "sq-5" | "sq-6" | "sq-7" => DeskModel::Sq,
             "x32" | "m32" | "x32/m32" => DeskModel::X32,
+            "s31" | "digico-s31" => DeskModel::S31,
             _ => DeskModel::Avantis,
         }
     }
@@ -35,6 +38,7 @@ impl DeskModel {
             DeskModel::DLive => "dlive",
             DeskModel::Sq => "sq",
             DeskModel::X32 => "x32",
+            DeskModel::S31 => "s31",
         }
     }
     pub fn label(self) -> &'static str {
@@ -43,6 +47,7 @@ impl DeskModel {
             DeskModel::DLive => "dLive",
             DeskModel::Sq => "SQ",
             DeskModel::X32 => "X32 / M32",
+            DeskModel::S31 => "DiGiCo S31",
         }
     }
     /// Highest base MIDI channel the desk lets you pick (1-based).
@@ -61,9 +66,9 @@ impl DeskModel {
     }
 
     /// True for consoles spoken to over OSC/UDP rather than MIDI over TCP.
-    /// The MIDI mirror must stand down for these; x32.rs drives them.
+    /// The MIDI mirror must stand down; each OSC model has its own driver.
     pub fn is_osc(self) -> bool {
-        self == DeskModel::X32
+        matches!(self, DeskModel::X32 | DeskModel::S31)
     }
     /// SQ has no name/colour messages in its MIDI protocol.
     pub fn has_names(self) -> bool {
@@ -136,7 +141,7 @@ pub fn note_map(model: DeskModel) -> &'static [NoteRange] {
         DeskModel::DLive => DLIVE,
         // Neither speaks the Note dialect: SQ is all-NRPN, and the X32 isn't
         // MIDI at all (OSC over UDP — see x32.rs).
-        DeskModel::Sq | DeskModel::X32 => &[],
+        DeskModel::Sq | DeskModel::X32 | DeskModel::S31 => &[],
     }
 }
 
@@ -429,6 +434,7 @@ pub fn pretty_kind(kind: &str) -> Option<&'static str> {
         "grp" => "Group",
         "sgrp" => "Group(st)",
         "aux" => "Aux",
+        "bus" => "Bus",
         "saux" => "Aux(st)",
         "mtx" => "Matrix",
         "smtx" => "Matrix(st)",

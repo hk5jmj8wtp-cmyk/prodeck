@@ -347,7 +347,7 @@ export function SettingsPage() {
           "where do I approve someone" one click, not a hunt. */}
       <nav className="set-jump">
         {[
-          { g: "Connections", items: [["ProPresenter", "set-pp"], ["Avantis", "set-avantis"], ["OBS", "set-obs"], ["Stage feed (NDI)", "set-ndi"], ["LAN Relay", "set-relay"], ...(!IS_WEB ? [["Browser Access", "set-web"]] : [])] },
+          { g: "Connections", items: [["ProPresenter", "set-pp"], ["Sound Console", "set-avantis"], ["OBS", "set-obs"], ["Stage feed (NDI)", "set-ndi"], ["LAN Relay", "set-relay"], ...(!IS_WEB ? [["Browser Access", "set-web"]] : [])] },
           { g: "Audio", items: [["Audio & Captions", "set-audio"], ["Alerts", "set-alerts"]] },
           { g: "Crew", items: [["Crew Members", "set-crew"]] },
           { g: "Advanced", items: [["Troubleshooter", "set-assist"], ["Gemini", "set-gemini"], ["Control Inputs", "set-inputs"], ["Song Key", "set-songkey"], ["TapLink", "set-taplink"]] },
@@ -518,12 +518,12 @@ export function SettingsPage() {
       <section className="card">
         <div className="card-head">
           <h3 id="set-avantis">Sound Console</h3><HelpLink section="features" />
-          <span className="chip">{{ avantis: "Avantis", dlive: "dLive", sq: "SQ", x32: "X32 / M32" }[form.avantis_model || "avantis"] ?? "Avantis"} · mirror</span>
+          <span className="chip">{{ avantis: "Avantis", dlive: "dLive", sq: "SQ", x32: "X32 / M32", s31: "DiGiCo S31" }[form.avantis_model || "avantis"] ?? "Avantis"} · mirror</span>
         </div>
         <p className="muted small">
           Watches the sound desk over the network: mutes, faders, scenes and
           channel names show up live in ProDeck. Allen &amp; Heath desks use MIDI
-          over TCP; Behringer X32 / Midas M32 use OSC. Control (mutes, faders,
+          over TCP; Behringer X32 / Midas M32 and DiGiCo S31 use OSC. Control (mutes, faders,
           names, scene recall) is admin-only and off by default in the dashboards.
         </p>
         <div className="settings-grid">
@@ -541,10 +541,7 @@ export function SettingsPage() {
                 const m = e.target.value;
                 set("avantis_model", m);
                 // Each desk's own default port and channel limit.
-                if (m === "x32") set("avantis_port", 10023);
-                else if (form.avantis_port === 10023) set("avantis_port", 51325);
-                if (m === "dlive" && (form.avantis_port === 51325 || !form.avantis_port)) set("avantis_port", 51325);
-                if (m !== "dlive" && form.avantis_port === 51328) set("avantis_port", 51325);
+                set("avantis_port", m === "s31" ? 8000 : m === "x32" ? 10023 : 51325);
                 const maxBase = m === "sq" ? 16 : 12;
                 if ((form.avantis_midi_base ?? 1) > maxBase) set("avantis_midi_base", maxBase);
               }}
@@ -553,6 +550,7 @@ export function SettingsPage() {
               <option value="dlive">dLive (MixRack or Surface)</option>
               <option value="sq">SQ-5 / SQ-6 / SQ-7</option>
               <option value="x32">Behringer X32 / Midas M32</option>
+              <option value="s31">DiGiCo S31 (experimental)</option>
             </select>
           </label>
           <HardwareStatus model={form.avantis_model || "avantis"} />
@@ -563,13 +561,13 @@ export function SettingsPage() {
           </label>
           <label className="field">
             <span>
-              TCP port{" "}
+              {["x32", "s31"].includes(form.avantis_model) ? "Console UDP receive port" : "TCP port"}{" "}
               <span className="muted">
                 {(form.avantis_model || "avantis") === "dlive"
                   ? "(MixRack 51325 · Surface 51328)"
                   : (form.avantis_model || "avantis") === "x32"
                     ? "(10023)"
-                    : "(51325)"}
+                    : form.avantis_model === "s31" ? "(match OSC Configuration on the desk)" : "(51325)"}
               </span>
             </span>
             <input className="input" type="number" min={1} max={65535} value={form.avantis_port || 51325}
@@ -578,7 +576,7 @@ export function SettingsPage() {
           {/* The X32 speaks OSC — it has no MIDI channel to match. Rendered
               conditionally, not `hidden`: .field sets display:flex, and an
               author rule beats the browser's [hidden] style. */}
-          {(form.avantis_model || "avantis") !== "x32" && (
+          {!["x32", "s31"].includes(form.avantis_model || "avantis") && (
           <label className="field">
             <span>
               {(form.avantis_model || "avantis") === "sq"
@@ -604,12 +602,31 @@ export function SettingsPage() {
               restart. Scenes 1–100.
             </p>
           )}
+          {form.avantis_model === "s31" && (<>
+            <label className="field">
+              <span>ProDeck UDP feedback port</span>
+              <input className="input" type="number" min={1} max={65535} value={form.s31_feedback_port || 8001}
+                onChange={(e) => { const n = parseInt(e.target.value); if (Number.isFinite(n)) set("s31_feedback_port", Math.min(65535, Math.max(1, n))); }} />
+            </label>
+            <p className="hint wide">
+              Requires S-Series firmware 3+. On the S31, open Extensions → OSC Control,
+              enable OSC, and add this computer's IP as the active controller. Set its
+              Send Port to the ProDeck feedback port above and enable both Send and Receive.
+              Use default OSC addresses, boolean mute values and fader values in dB
+              (no normalization or inversion). Press Resend All to refresh the mirror.
+              Only one OSC controller can be active on the console.
+              Busses retain their OSC numbers when switched between aux and group;
+              verify them in OSC Commands → Help before enabling dashboard control.
+              Snapshot recall supports rows 1–500; colour and meter feedback are not supported.
+            </p>
+          </>)}
           {(form.avantis_model || "avantis") === "dlive" && (
             <p className="hint wide">
               dLive reports current mutes and fader levels on connect, so the mirror
               starts complete. Inputs 1–128, DCAs 1–24, Mains 1–6, UFX included.
             </p>
           )}
+          {form.avantis_model !== "s31" && (<>
           <label className="field">
             <span>Desk watchdog — page this person when the desk changes</span>
             <select
@@ -646,6 +663,7 @@ export function SettingsPage() {
             crew={crew}
             onChange={(next) => set("avantis_softkeys", next)}
           />
+          </>)}
           <label className="field wide">
             <span>Scene names — one per line, e.g. "1 = Pre-service" (the desk only sends numbers)</span>
             <textarea
@@ -678,10 +696,10 @@ export function SettingsPage() {
             <input className="input" type="number" min={0} value={form.avantis_waves_off_scene ?? 0} onChange={(e) => set("avantis_waves_off_scene", Math.max(0, parseInt(e.target.value || "0", 10)))} />
           </label>
           <p className="muted small" style={{ gridColumn: "1 / -1", margin: 0 }}>
-            The desk announces every scene recall. With these two set, the Sound Desk tile shows <strong>Waves ON / OFF</strong>,
+            {form.avantis_model === "s31" ? "S31 scene status is shown only when the desk sends snapshot feedback; verify this on your console. These labels do not control Waves directly." : <>The desk announces every scene recall. With these two set, the Sound Desk tile shows <strong>Waves ON / OFF</strong>,
             the troubleshooter knows it, and an alert appears if Waves is off within 90 minutes of a service. Mutes ProDeck only
             remembers from before the desk connected show with a <strong>?</strong> — the console can't be asked for its mute state,
-            so tap a mute once on the desk to confirm it.
+            so tap a mute once on the desk to confirm it.</>}
           </p>
         </div>
       </section>
@@ -2414,11 +2432,12 @@ function HardwareStatus({ model }: { model: string }) {
   return (
     <div className="field wide">
       <span className={`chip ${tested ? "online" : "warn"}`}>
-        {tested ? "tested on real hardware" : "built from the published protocol"}
+        {tested ? "tested on real hardware" : model === "s31" ? "experimental — hardware validation needed" : "built from the published protocol"}
       </span>
       <span className="hint">
         {tested
           ? "This is the desk ProDeck was developed against, in weekly use."
+          : model === "s31" ? "Software-tested against S-Series OSC messages. Verify channel mappings and feedback on your S31 before using it during a service."
           : "Written from the manufacturer's protocol document and covered by tests, but never run against a real one. It should work; if it doesn't, that's a bug worth reporting — and if it does, saying so is just as useful."}
       </span>
     </div>

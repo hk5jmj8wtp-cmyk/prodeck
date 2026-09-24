@@ -42,6 +42,8 @@ pub struct AvantisInner {
     pub scene_at: Option<u64>,
     /// Raw 0-127 fader values (dB = value/127*64 - 54, per the protocol table).
     pub faders: HashMap<String, u8>,
+    /// Native dB values for OSC desks; avoids losing very quiet S31 levels.
+    pub fader_db: HashMap<String, f32>,
     pub names: HashMap<String, String>,
     pub colors: HashMap<String, u8>,
     /// Writer half of the live connection (a try_clone of the mirror's
@@ -119,6 +121,7 @@ pub fn snapshot(state: &AvantisState) -> Value {
         "connectedAt": s.connected_at,
         "sceneAt": s.scene_at,
         "faders": s.faders,
+        "faderDb": s.fader_db,
         "names": s.names,
         "watchLog": s.watch_log.iter().rev().take(20).collect::<Vec<_>>(),
         "colors": s.colors,
@@ -167,6 +170,9 @@ pub async fn avantis_set_mute(
     let st = state.inner().clone();
     let (base, model) = desk_cfg(&st);
     // OSC consoles speak a different transport entirely.
+    if crate::s31::selected(&app) {
+        return crate::s31::set_mute(&app, &id, muted).await;
+    }
     if model.is_osc() {
         crate::x32::set_mute(&app, &id, muted).await?;
         let mut s = st.lock().unwrap_or_else(|p| p.into_inner());
@@ -198,6 +204,9 @@ pub async fn avantis_recall_scene(
     let (base, model) = desk_cfg(&st);
     if !(1..=model.max_scene()).contains(&scene) {
         return Err(format!("scene must be 1-{} on the {}", model.max_scene(), model.label()));
+    }
+    if crate::s31::selected(&app) {
+        return crate::s31::recall_scene(&app, scene).await;
     }
     if model.is_osc() {
         crate::x32::recall_scene(&app, scene).await?;
@@ -233,6 +242,9 @@ pub async fn avantis_set_name(
         .collect();
     let st = state.inner().clone();
     let (base, model) = desk_cfg(&st);
+    if crate::s31::selected(&app) {
+        return crate::s31::set_name(&app, &id, &clean).await;
+    }
     if model.is_osc() {
         crate::x32::set_name(&app, &id, &clean).await?;
         let mut s = st.lock().unwrap_or_else(|p| p.into_inner());
@@ -261,12 +273,16 @@ pub async fn avantis_set_name(
 pub async fn avantis_set_fader(
     id: String,
     value: u8,
+    db: Option<f32>,
     state: tauri::State<'_, AvantisState>,
     app: AppHandle,
 ) -> Result<(), String> {
     let v = value.min(0x7F);
     let st = state.inner().clone();
     let (base, model) = desk_cfg(&st);
+    if crate::s31::selected(&app) {
+        return crate::s31::set_fader(&app, &id, v, db).await;
+    }
     if model.is_osc() {
         crate::x32::set_fader(&app, &id, v).await?;
         let mut s = st.lock().unwrap_or_else(|p| p.into_inner());
@@ -642,6 +658,7 @@ fn settings_tuple(app: &AppHandle) -> (bool, String, u8, DeskModel, u16) {
 fn set_connected(app: &AppHandle, state: &AvantisState, up: bool) {
     let changed = {
         let mut s = state.lock().unwrap_or_else(|p| p.into_inner());
+        if !up && s.model.is_osc() { return; }
         let was = s.connected;
         s.connected = up;
         if up && !was {
@@ -718,6 +735,7 @@ static RECONNECT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool:
 /// result the same way it always has.
 #[tauri::command]
 pub fn avantis_reconnect() {
+    crate::s31::reconnect();
     RECONNECT.store(true, std::sync::atomic::Ordering::Release);
 }
 
@@ -725,7 +743,9 @@ pub fn spawn_mirror(app: AppHandle) {
     std::thread::spawn(move || {
         let state: AvantisState = app.state::<AvantisState>().inner().clone();
         let mut softkey_fired: HashMap<(u8, u8), Instant> = HashMap::new();
-        load_cache(&state);
+        if !settings_tuple(&app).3.is_osc() {
+            load_cache(&state);
+        }
         let mut last_save = Instant::now();
         loop {
             let (enabled, host, base, model, port) = settings_tuple(&app);
@@ -754,6 +774,9 @@ pub fn spawn_mirror(app: AppHandle) {
             stream.set_write_timeout(Some(Duration::from_secs(2))).ok();
             {
                 let mut s = state.lock().unwrap_or_else(|p| p.into_inner());
+                if s.model == DeskModel::S31 && model != DeskModel::S31 {
+                    *s = AvantisInner::default();
+                }
                 s.writer = stream.try_clone().ok();
                 s.base_nibble = base_nibble;
                 s.model = model;
@@ -784,6 +807,7 @@ pub fn spawn_mirror(app: AppHandle) {
                 match stream.read(&mut buf) {
                     Ok(0) => break, // desk closed the connection
                     Ok(n) => {
+                        if settings_tuple(&app) != (enabled, host.clone(), base, model, port) { break; }
                         for &b in &buf[..n] {
                             dirty |= parser.feed(b, model, base_nibble, &state);
                         }

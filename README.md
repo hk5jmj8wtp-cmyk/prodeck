@@ -40,6 +40,8 @@ Workers for the optional cloud features.
   MIDI send for FOH plugins. Only the Avantis has been tried against real
   hardware — the others are built from the published protocols and tested in
   software.
+- **DiGiCo S31 (experimental, this fork)** — firmware 3+ OSC channel names,
+  mutes, faders and snapshot recall. See [S31 setup and hardware validation](docs/DIGICO_S31.md).
 - **OBS Studio** — current scene, streaming/recording state with elapsed time,
   and dropped frames, on any dashboard. Turn on OBS's WebSocket server and put
   the port and password in Settings → OBS Studio.

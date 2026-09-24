@@ -194,7 +194,11 @@ fn settings(app: &AppHandle) -> (bool, String, DeskModel, u16) {
 fn set_connected(app: &AppHandle, state: &AvantisState, up: bool) {
     let changed = {
         let mut s = state.lock().unwrap_or_else(|p| p.into_inner());
+        if !up && s.model != DeskModel::X32 { return; }
         let was = s.connected;
+        if up && s.model == DeskModel::S31 {
+            *s = crate::avantis::AvantisInner::default();
+        }
         s.connected = up;
         if up {
             s.model = DeskModel::X32;
@@ -253,7 +257,7 @@ pub fn spawn_mirror(app: AppHandle) {
         let state: AvantisState = app.state::<AvantisState>().inner().clone();
         loop {
             let (enabled, host, model, port) = settings(&app);
-            if !enabled || host.trim().is_empty() || !model.is_osc() {
+            if !enabled || host.trim().is_empty() || model != DeskModel::X32 {
                 tokio::time::sleep(Duration::from_secs(3)).await;
                 continue;
             }
@@ -308,6 +312,7 @@ async fn session(
         tokio::select! {
             r = sock.recv(&mut buf) => {
                 let n = r.map_err(|e| e.to_string())?;
+                if settings(app) != cfg { return Ok(()); }
                 last_rx = tokio::time::Instant::now();
                 if !seen_any {
                     seen_any = true;
@@ -354,7 +359,7 @@ fn apply_packet(s: &mut crate::avantis::AvantisInner, packet: OscPacket) -> bool
 
 async fn fire(app: &AppHandle, addr: &str, args: Vec<OscType>) -> Result<(), String> {
     let (enabled, host, model, port) = settings(app);
-    if !enabled || host.trim().is_empty() || !model.is_osc() {
+    if !enabled || host.trim().is_empty() || model != DeskModel::X32 {
         return Err("no X32/M32 configured".into());
     }
     let sock = tokio::net::UdpSocket::bind(("0.0.0.0", 0))

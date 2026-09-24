@@ -1961,10 +1961,10 @@ const AVANTIS_COLORS: Record<number, string> = {
 };
 const KIND_LABEL: Record<string, string> = {
   input: "In", dca: "DCA", main: "Main", grp: "Grp", sgrp: "Grp",
-  aux: "Aux", saux: "Aux", mtx: "Mtx", smtx: "Mtx", fxs: "FX", sfxs: "FX", fxr: "FXr", mgrp: "MGrp",
+  bus: "Bus", aux: "Aux", saux: "Aux", mtx: "Mtx", smtx: "Mtx", fxs: "FX", sfxs: "FX", fxr: "FXr", mgrp: "MGrp",
   ufxs: "UFX", ufxr: "UFXr",
 };
-const KIND_ORDER = ["main", "dca", "input", "grp", "sgrp", "aux", "saux", "mtx", "smtx", "fxs", "sfxs", "fxr", "ufxs", "ufxr", "mgrp"];
+const KIND_ORDER = ["main", "dca", "input", "bus", "grp", "sgrp", "aux", "saux", "mtx", "smtx", "fxs", "sfxs", "fxr", "ufxs", "ufxr", "mgrp"];
 
 import { fmtSince, muteConfidence, wavesState } from "../lib/deskConfidence";
 
@@ -1989,6 +1989,11 @@ function AvantisWidget({ widget, editing, update }: WidgetProps) {
     if (IS_WEB) webWhoami().then((w) => setIsAdmin(w.tier === "admin")).catch(() => {});
   }, []);
   const canControl = allowControl && isAdmin;
+  const [controlError, setControlError] = useState<string | null>(null);
+  const control = (operation: Promise<void>) => {
+    setControlError(null);
+    operation.catch((e) => setControlError(String(e)));
+  };
 
   useEffect(() => {
     avantisState().then(setSnap).catch(() => {});
@@ -2079,7 +2084,7 @@ function AvantisWidget({ widget, editing, update }: WidgetProps) {
     return settings ? (
       <NeedsDesk />
     ) : (
-      <div className="widget-empty">Desk mirror is off — enable it in Settings → Avantis</div>
+      <div className="widget-empty">Desk mirror is off — enable it in Settings → Sound Console</div>
     );
   if (!snap || !snap.connected)
     return <NeedsDesk offline hint="Can't reach the console — check it's on and networked" />;
@@ -2088,6 +2093,7 @@ function AvantisWidget({ widget, editing, update }: WidgetProps) {
 
   return (
     <div className="w-avantis">
+      {controlError && <p className="error small" role="alert">{controlError}</p>}
       <div className="w-avantis-head">
         <span className="chip online">{canControl ? "control" : "mirroring"}</span>
         {snap.scene != null && (
@@ -2125,10 +2131,10 @@ function AvantisWidget({ widget, editing, update }: WidgetProps) {
               // A scene resets the whole console — never one accidental tap.
               if (
                 await askConfirm(
-                  `Recall scene ${n}${label ? ` — ${label}` : ""} on the Avantis? This changes the entire desk state.`,
+                  `Recall scene ${n}${label ? ` — ${label}` : ""} on the sound console? This changes the entire desk state.`,
                 )
               )
-                avantisRecallScene(n).catch(() => {});
+                control(avantisRecallScene(n));
             }}
           >
             <option value="">Recall scene…</option>
@@ -2163,7 +2169,7 @@ function AvantisWidget({ widget, editing, update }: WidgetProps) {
                       key={r.id}
                       className={`av-mgrp ${active ? "active" : ""}`}
                       title={`Mute Group ${r.idx} — ${active ? "release" : "engage"}`}
-                      onClick={() => avantisSetMute(r.id, !active).catch(() => {})}
+                      onClick={() => control(avantisSetMute(r.id, !active))}
                     >
                       {r.name}
                       <span className="av-mgrp-state">{active ? "MUTED" : "open"}</span>
@@ -2189,7 +2195,9 @@ function AvantisWidget({ widget, editing, update }: WidgetProps) {
                 const nudge = (d: number) => {
                   const cur = snap.faders[r.id];
                   if (cur === undefined) return;
-                  avantisSetFader(r.id, Math.max(0, Math.min(127, cur + d))).catch(() => {});
+                  const exactDb = snap.model === "s31" ? snap.faderDb?.[r.id] : undefined;
+                  control(avantisSetFader(r.id, Math.max(0, Math.min(127, cur + d)),
+                    exactDb === undefined ? undefined : Math.max(-150, Math.min(10, exactDb + d / 2))));
                 };
                 return (
                   <div
@@ -2201,7 +2209,7 @@ function AvantisWidget({ widget, editing, update }: WidgetProps) {
                     <span className="av-name">{r.name}</span>
                     <span className="av-sub">
                       {muted === true ? (conf === "remembered" ? "MUTED?" : "MUTED") : muted === false ? (conf === "remembered" ? "live?" : "live") : "—"}
-                      {fader !== undefined ? ` · ${faderDb(fader)}` : ""}
+                      {fader !== undefined ? ` · ${snap.model === "s31" && snap.faderDb?.[r.id] !== undefined ? (snap.faderDb[r.id] <= -150 ? "-∞" : `${snap.faderDb[r.id].toFixed(1)} dB`) : faderDb(fader)}` : ""}
                     </span>
                     {canControl && (
                       <div className="av-ctl-row">
@@ -2212,7 +2220,7 @@ function AvantisWidget({ widget, editing, update }: WidgetProps) {
                               ? "Unmute on the desk"
                               : "Mute on the desk (unknown state mutes — the safe direction)"
                           }
-                          onClick={() => avantisSetMute(r.id, muted !== true).catch(() => {})}
+                          onClick={() => control(avantisSetMute(r.id, muted !== true))}
                         >
                           {muted === true ? "Unmute" : "Mute"}
                         </button>
@@ -3100,7 +3108,7 @@ export const WIDGETS: WidgetDef[] = [
   // Audio
   { type: "audio_meter", label: "SPL + RTA", group: "Audio", w: 5, h: 5, component: AudioMeterWidget },
   { type: "listen", label: "Overflow Listen", group: "Audio", w: 3, h: 3, component: ListenWidget },
-  { type: "avantis", label: "Sound Desk (Avantis)", group: "Audio", w: 6, h: 4, component: AvantisWidget },
+  { type: "avantis", label: "Sound Desk", group: "Audio", w: 6, h: 4, component: AvantisWidget },
   { type: "key_change", label: "Song Key → Waves", group: "Audio", w: 6, h: 2, component: KeyChangeWidget },
   { type: "readiness", label: "Sunday Readiness", group: "General", w: 4, h: 4, component: ReadinessWidget },
   // Video & Switcher

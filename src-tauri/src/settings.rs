@@ -162,12 +162,14 @@ pub struct Settings {
     pub keep_awake: bool,
     pub avantis_enabled: bool,
     pub avantis_host: String,
-    /// Which Allen & Heath console: "avantis" (default), "dlive", or "sq".
-    /// Picks the MIDI dialect and the channel address map.
+    /// Console model: avantis (default), dlive, sq, x32, or s31.
+    /// Picks the transport, protocol and channel address map.
     pub avantis_model: String,
-    /// TCP port: 51325 for Avantis, a dLive MixRack, or SQ; 51328 for a dLive
-    /// Surface. 0 = default.
+    /// Console receive port: A&H TCP 51325 (dLive Surface 51328),
+    /// X32 UDP 10023, or S31's configured OSC UDP port. 0 = model default.
     pub avantis_port: u16,
+    /// Local UDP port matching the S31 controller Send Port.
+    pub s31_feedback_port: u16,
     /// Base MIDI channel (1-based, as shown on the desk under
     /// Utility → Control → MIDI). Avantis spans base..base+4; max base is 12.
     pub avantis_midi_base: u8,
@@ -293,6 +295,7 @@ impl Default for Settings {
             avantis_host: String::new(),
             avantis_model: "avantis".into(),
             avantis_port: 51325,
+            s31_feedback_port: 8001,
             avantis_midi_base: 12,
             avantis_scene_labels: std::collections::HashMap::new(),
             avantis_waves_on_scene: 0,
@@ -741,6 +744,14 @@ pub fn update_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_console_settings_get_a_feedback_port_without_changing_model() {
+        let old: Settings = serde_json::from_str(r#"{"avantis_model":"dlive","avantis_port":51328}"#).unwrap();
+        assert_eq!(old.s31_feedback_port, 8001);
+        assert_eq!(old.avantis_model, "dlive");
+        assert_eq!(old.avantis_port, 51328);
+    }
 
     fn tmpdir(tag: &str) -> PathBuf {
         let p = std::env::temp_dir().join(format!("prodeck-test-{tag}-{}", std::process::id()));

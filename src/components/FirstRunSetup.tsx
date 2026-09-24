@@ -124,6 +124,7 @@ const CONSOLES = [
   { id: "avantis", name: "Avantis", hint: "Base MIDI channel 1–12 · Utility → Control → MIDI", port: 51325, maxBase: 12 },
   { id: "dlive", name: "dLive", hint: "MixRack port 51325, Surface 51328 · base channel 1–12", port: 51325, maxBase: 12 },
   { id: "sq", name: "SQ-5 / SQ-6 / SQ-7", hint: "MIDI channel 1–16 · Utility → General → MIDI · names not available", port: 51325, maxBase: 16 },
+  { id: "s31", name: "DiGiCo S31", hint: "Experimental · S-Series 3+ · configure OSC Send/Receive on the desk", port: 8000, maxBase: 1 },
   { id: "x32", name: "X32 / M32", hint: "Behringer X32 or Midas M32 · OSC on port 10023 · nothing to set on the desk", port: 10023, maxBase: 1 },
 ];
 
@@ -178,6 +179,7 @@ export function FirstRunSetup({ onNavigate }: { onNavigate?: (p: string) => void
   const [deskModel, setDeskModel] = useState("avantis");
   const [deskHost, setDeskHost] = useState("");
   const [deskPort, setDeskPort] = useState(51325);
+  const [deskFeedbackPort, setDeskFeedbackPort] = useState(8001);
   const [deskBase, setDeskBase] = useState(1);
   const [deskBusy, setDeskBusy] = useState(false);
   const [deskMsg, setDeskMsg] = useState("");
@@ -240,6 +242,7 @@ export function FirstRunSetup({ onNavigate }: { onNavigate?: (p: string) => void
       if (s.avantis_host) setDeskHost(s.avantis_host);
       if (s.avantis_model) setDeskModel(s.avantis_model);
       if (s.avantis_port) setDeskPort(s.avantis_port);
+      if (s.s31_feedback_port) setDeskFeedbackPort(s.s31_feedback_port);
       if (s.avantis_midi_base) setDeskBase(s.avantis_midi_base);
       if (s.avantis_enabled && s.avantis_host) setDeskSaved(true);
     }
@@ -463,6 +466,7 @@ export function FirstRunSetup({ onNavigate }: { onNavigate?: (p: string) => void
         avantis_model: deskModel,
         avantis_host: deskHost.trim(),
         avantis_port: deskPort || model.port,
+        s31_feedback_port: deskFeedbackPort,
         avantis_midi_base: Math.min(model.maxBase, Math.max(1, deskBase)),
       } as unknown as Settings);
       await refreshSettings();
@@ -770,7 +774,14 @@ export function FirstRunSetup({ onNavigate }: { onNavigate?: (p: string) => void
                 <span>Port</span>
                 <input className="input" type="number" value={deskPort} onChange={(e) => setDeskPort(parseInt(e.target.value) || consoleMeta.port)} />
               </label>
-              {deskModel !== "x32" && (
+              {deskModel === "s31" && (
+                <label className="field narrow">
+                  <span>ProDeck feedback port</span>
+                  <input className="input" type="number" min={1} max={65535} value={deskFeedbackPort}
+                    onChange={(e) => { const n = parseInt(e.target.value); if (Number.isFinite(n)) setDeskFeedbackPort(Math.min(65535, Math.max(1, n))); }} />
+                </label>
+              )}
+              {!["x32", "s31"].includes(deskModel) && (
               <label className="field narrow">
                 <span>{deskModel === "sq" ? "MIDI channel" : "Base MIDI ch."}</span>
                 <input className="input" type="number" min={1} max={consoleMeta.maxBase} value={deskBase}
@@ -779,7 +790,9 @@ export function FirstRunSetup({ onNavigate }: { onNavigate?: (p: string) => void
               )}
             </div>
             <p className="muted small ob-note">
-              {deskModel === "x32"
+              {deskModel === "s31"
+                ? "On the S31 (firmware 3+), enable Extensions → OSC Control. Match the desk's Receive Port to Port above. Add this computer's IP as the active controller, set its Send Port to ProDeck's feedback port, and enable Send and Receive. Use default OSC addresses/ranges, then press Resend All. See Settings → Sound Console for mapping and validation notes. "
+                : deskModel === "x32"
                 ? "Nothing to set on the console itself — ProDeck subscribes over OSC. "
                 : `Set the desk's MIDI channel under ${deskModel === "sq" ? "Utility → General → MIDI" : "Utility → Control → MIDI"} and enter the same number here. `}
               Give the desk a fixed IP (or a DHCP reservation) so this keeps working after a router restart.
@@ -789,7 +802,7 @@ export function FirstRunSetup({ onNavigate }: { onNavigate?: (p: string) => void
               <StatusLine
                 ok={deskUp}
                 okText={`Connected to the ${consoleMeta.name} — the mirror is live.`}
-                waitText="Reaching the desk… (a few seconds). Not connecting? Check the IP, that the desk is on the same network, and that MIDI over TCP is enabled on it."
+                waitText="Reaching the desk… (a few seconds). Not connecting? Check the IP, that the desk is on the same network, and that its remote-control protocol is enabled."
               />
             )}
             <div className="ob-actions">
