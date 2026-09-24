@@ -12,6 +12,14 @@ The second page has its own playlists, slide previews, previous/next controls, l
 
 Disconnecting or reconnecting either connection leaves the other running. Machine two retries its saved address if the connection drops. When a second machine is configured, the first also stays on its saved address instead of automatically adopting an arbitrary computer found on the network. Stable hostnames or reserved IP addresses are recommended for both.
 
-Existing dashboard widgets, Planning Center linking, Auto-Follow, TapLink, lobby automation, and MIDI/OSC inputs continue to use the first ProPresenter. They are not duplicated onto machine two. The second page is also available through ProDeck's browser gateway with the same access permissions as the first; establishing a connection is done on the Mac running ProDeck.
+## Dashboard widgets
+
+Open a dashboard, choose **Edit → Add Widget**, then choose a widget from the **propresenter 2** section. Slide Preview, Slide Grid, Timer, Lobby TVs (Announcements), and Stage Message (Alerts) support both computers. You can mix them on one dashboard.
+
+To change an existing widget, enter Edit mode and change its **ProPresenter source**. Its title identifies machine two. Changing computers clears the selected timer and screen; other widget preferences are retained. Existing layouts default to the first ProPresenter. The saved source also applies on phones and kiosks.
+
+Each computer has independent lobby auto-restore settings. Timer IDs, status, previews, and control commands remain separate even when both computers use matching IDs. The global Clear toolbar names its target; on dashboards it controls the first computer.
+
+Planning Center linking, Auto-Follow, TapLink, and MIDI/OSC inputs continue to use the first ProPresenter. Confidence Banner and Live Viewers are shared booth services rather than per-computer ProPresenter feeds. The second page is also available through ProDeck's browser gateway with the same access permissions as the first; establishing a connection is done on the Mac running ProDeck.
 
 Validation uses two simulated API servers and frontend/browser checks. Testing against your two actual ProPresenter computers is still needed.

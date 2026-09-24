@@ -195,6 +195,9 @@ pub struct Settings {
     pub lobby_auto_index: u64,
     /// Display label only (what the widget shows as the standing loop).
     pub lobby_auto_name: String,
+    pub pp2_lobby_auto_playlist: String,
+    pub pp2_lobby_auto_index: u64,
+    pub pp2_lobby_auto_name: String,
     /// Auto check-in via geolocation: the building's coordinates + radius in
     /// meters. Both blank = the geo path is off and phones never prompt for
     /// location (the wifi/IP path needs no configuration at all).
@@ -310,6 +313,9 @@ impl Default for Settings {
             lobby_auto_playlist: String::new(),
             lobby_auto_index: 0,
             lobby_auto_name: String::new(),
+            pp2_lobby_auto_playlist: String::new(),
+            pp2_lobby_auto_index: 0,
+            pp2_lobby_auto_name: String::new(),
             church_lat: String::new(),
             church_lng: String::new(),
             checkin_radius_m: 150,

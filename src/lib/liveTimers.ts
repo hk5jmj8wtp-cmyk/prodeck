@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { useProDeck } from "../store";
+import { usePpClient, usePpConnection } from "../propresenterStore";
 import { currentTimers, type TimerView } from "./status";
-import { ppGet } from "./tauri";
 
 function parseHMS(s: string): number {
   const neg = s.trim().startsWith("-");
@@ -23,7 +22,6 @@ function fmtHMS(total: number): string {
 }
 
 // uuid -> direction: -1 counts down, +1 counts up. Learned from /v1/timers.
-const dirCache: Record<string, 1 | -1> = {};
 
 /**
  * ProPresenter only streams timer updates on state changes, so the value would
@@ -31,7 +29,9 @@ const dirCache: Record<string, 1 | -1> = {};
  * ticks locally (~4x/sec) so running timers stay smooth and current.
  */
 export function useLiveTimers(): TimerView[] {
-  const { status, connected } = useProDeck();
+  const { status, connected } = usePpConnection();
+  const { ppGet } = usePpClient();
+  const dirCache = useRef<Record<string, 1 | -1>>({});
   const server = currentTimers(status);
   const [, force] = useState(0);
   const samples = useRef<Record<string, { sec: number; at: number }>>({});
@@ -48,14 +48,14 @@ export function useLiveTimers(): TimerView[] {
           const uuid = t?.id?.uuid;
           if (!uuid) continue;
           const up = "elapsed" in t || "count_up" in t;
-          dirCache[uuid] = up ? 1 : -1;
+          dirCache.current[uuid] = up ? 1 : -1;
         }
       })
       .catch(() => {});
     return () => {
       cancel = true;
     };
-  }, [connected]);
+  }, [connected, ppGet]);
 
   // Re-base the local clock whenever the server pushes new values.
   useEffect(() => {
@@ -74,7 +74,7 @@ export function useLiveTimers(): TimerView[] {
     if (t.state !== "running") return t;
     const s = samples.current[t.id];
     if (!s) return t;
-    const dir = dirCache[t.id] ?? -1;
+    const dir = dirCache.current[t.id] ?? -1;
     let sec = s.sec + dir * ((Date.now() - s.at) / 1000);
     if (dir < 0 && s.sec >= 0) sec = Math.max(0, sec);
     return { ...t, time: fmtHMS(sec) };

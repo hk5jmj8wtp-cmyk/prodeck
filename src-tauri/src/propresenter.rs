@@ -800,46 +800,71 @@ impl JsonChunker {
 // web clients never execute this file).
 // ---------------------------------------------------------------------------
 
+/// One watchdog pass. Only a confirmed empty layer is safe to restore.
+async fn restore_lobby(
+    state: &ProPresenterState,
+    playlist: &str,
+    index: u64,
+) -> Result<(), String> {
+    if playlist.is_empty() {
+        return Ok(());
+    }
+    let (client, base) = current_config(state).await?;
+    let value = client
+        .get(format!("{base}/v1/announcement/active"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !value
+        .get("announcement")
+        .map(|a| a.is_null())
+        .unwrap_or(false)
+    {
+        return Ok(());
+    }
+    let response = client
+        .get(format!(
+            "{base}/v1/playlist/{}/{index}/trigger",
+            urlencoding::encode(playlist)
+        ))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    ensure_ok(response)
+}
+
 pub fn spawn_lobby_auto(app: tauri::AppHandle) {
     use tauri::Manager;
-    tauri::async_runtime::spawn(async move {
-        loop {
-            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-            let (playlist, index) = {
-                let st = app.state::<crate::settings::SettingsState>();
-                let s = st.lock().unwrap_or_else(|p| p.into_inner());
-                (s.lobby_auto_playlist.clone(), s.lobby_auto_index)
-            };
-            if playlist.is_empty() {
-                continue;
+    for instance in [1, 2] {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                let (playlist, index) = {
+                    let st = app.state::<crate::settings::SettingsState>();
+                    let s = st.lock().unwrap_or_else(|p| p.into_inner());
+                    if instance == 2 {
+                        (s.pp2_lobby_auto_playlist.clone(), s.pp2_lobby_auto_index)
+                    } else {
+                        (s.lobby_auto_playlist.clone(), s.lobby_auto_index)
+                    }
+                };
+                let state = select_state(
+                    &app.state::<ProPresenterState>(),
+                    &app.state::<ProPresenter2State>(),
+                    Some(instance),
+                );
+                if let Ok(state) = state {
+                    let _ = restore_lobby(&state, &playlist, index).await;
+                }
             }
-            let state = app.state::<ProPresenterState>().inner().clone();
-            let Ok((client, base)) = current_config(&state).await else {
-                continue; // Pro link down — nothing to restore onto yet
-            };
-            // Only act on a confirmed-empty layer: an unreachable Pro or a
-            // malformed reply must not fire a trigger.
-            let active = client
-                .get(format!("{}/v1/announcement/active", base))
-                .send()
-                .await;
-            let Ok(resp) = active else { continue };
-            let Ok(v) = resp.json::<serde_json::Value>().await else {
-                continue;
-            };
-            let is_dark = v.get("announcement").map(|a| a.is_null()).unwrap_or(false);
-            if !is_dark {
-                continue;
-            }
-            let _ = client
-                .get(format!(
-                    "{}/v1/playlist/{}/{}/trigger",
-                    base, playlist, index
-                ))
-                .send()
-                .await;
-        }
-    });
+        });
+    }
 }
 
 // ProPresenter's status stream does NOT emit announcement/slide_index when a
@@ -1000,7 +1025,17 @@ mod instance_tests {
                         .to_string(),
                 )
                 .unwrap();
-                let body = format!("{{\"machine\":\"{label}\"}}");
+                let body = if String::from_utf8_lossy(&bytes[..n])
+                    .starts_with("GET /v1/announcement/active ")
+                {
+                    if label == "occupied" {
+                        r#"{"announcement":{"id":{"name":"Playing"}}}"#.to_string()
+                    } else {
+                        r#"{"announcement":null}"#.to_string()
+                    }
+                } else {
+                    format!("{{\"machine\":\"{label}\"}}")
+                };
                 let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
                 stream.write_all(response.as_bytes()).await.unwrap();
             }
@@ -1109,6 +1144,48 @@ mod instance_tests {
         close_connection(&first).await;
     }
 
+    #[tokio::test]
+    async fn lobby_restore_targets_each_machine_without_touching_the_other() {
+        let (first, mut first_requests) = fake_connection("first").await;
+        let (second, mut second_requests) = fake_connection("second").await;
+        restore_lobby(&second, "second loop", 2).await.unwrap();
+        assert_eq!(
+            second_requests.recv().await.unwrap(),
+            "GET /v1/announcement/active HTTP/1.1"
+        );
+        assert_eq!(
+            second_requests.recv().await.unwrap(),
+            "GET /v1/playlist/second%20loop/2/trigger HTTP/1.1"
+        );
+        assert!(first_requests.try_recv().is_err());
+        restore_lobby(&first, "first-loop", 4).await.unwrap();
+        assert_eq!(
+            first_requests.recv().await.unwrap(),
+            "GET /v1/announcement/active HTTP/1.1"
+        );
+        assert_eq!(
+            first_requests.recv().await.unwrap(),
+            "GET /v1/playlist/first-loop/4/trigger HTTP/1.1"
+        );
+        assert!(second_requests.try_recv().is_err());
+        close_connection(&first).await;
+        close_connection(&second).await;
+    }
+
+    #[tokio::test]
+    async fn lobby_restore_leaves_a_playing_layer_and_disabled_config_alone() {
+        let (state, mut requests) = fake_connection("occupied").await;
+        restore_lobby(&state, "", 0).await.unwrap();
+        assert!(requests.try_recv().is_err());
+        restore_lobby(&state, "loop", 0).await.unwrap();
+        assert_eq!(
+            requests.recv().await.unwrap(),
+            "GET /v1/announcement/active HTTP/1.1"
+        );
+        assert!(requests.try_recv().is_err());
+        close_connection(&state).await;
+    }
+
     #[test]
     fn streams_have_separate_event_names_and_old_settings_disable_second() {
         for event in ["connected", "disconnected", "status", "stream_error"] {
@@ -1124,5 +1201,6 @@ mod instance_tests {
         assert!(old.pp2_host.is_empty());
         assert_eq!(old.pp2_port, 1025);
         assert!(!old.pp2_auto_connect);
+        assert!(old.pp2_lobby_auto_playlist.is_empty());
     }
 }

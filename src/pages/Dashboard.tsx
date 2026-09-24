@@ -3,6 +3,8 @@ import { usePerms } from "../lib/perms";
 import GridLayout, { WidthProvider, type Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
+import { usePpConnection } from "../propresenterStore";
+import { isPpWidget, widgetTitle, dashboardPpInstances } from "../lib/ppWidgets";
 import { useProDeck } from "../store";
 import { useRelay } from "../relayStore";
 import { Icon } from "../components/Icon";
@@ -26,6 +28,7 @@ const ACTIVE_DASH_KEY = "prodeck.activeDashboard";
 
 export function Dashboard({ onNavigate }: { onNavigate: (p: any) => void }) {
   const { connected, connect, settings } = useProDeck();
+  const pp2 = usePpConnection(2);
   const relay = useRelay();
   const [reconnecting, setReconnecting] = useState(false);
   const [reconnectFailed, setReconnectFailed] = useState(false);
@@ -205,13 +208,13 @@ export function Dashboard({ onNavigate }: { onNavigate: (p: any) => void }) {
     if (changed) patchActive((d) => ({ ...d, widgets }));
   }
 
-  function addWidget(type: string) {
+  function addWidget(type: string, instance: 1 | 2 = 1) {
     const def = WIDGET_MAP[type];
     const nextY = active.widgets.reduce((m, w) => Math.max(m, w.y + w.h), 0);
     const id = newId();
     patchActive((d) => ({
       ...d,
-      widgets: [...d.widgets, { id, type, x: 0, y: nextY, w: def.w, h: def.h, config: {} }],
+      widgets: [...d.widgets, { id, type, x: 0, y: nextY, w: def.w, h: def.h, config: isPpWidget(type) ? { ppInstance: instance } : {} }],
     }));
     setAdding(false);
     setPickQuery("");
@@ -331,18 +334,25 @@ export function Dashboard({ onNavigate }: { onNavigate: (p: any) => void }) {
       />
 
 
-      {!connected && (
+      {!connected && dashboardPpInstances(active.widgets).includes(1) && (
         <div className="banner dash-banner">
           {IS_WEB
-            ? "Not connected to ProPresenter — live widgets are idle. Connecting happens on the booth Mac itself."
+            ? "Not connected to ProPresenter — its widgets are idle. Connecting happens on the booth Mac itself."
             : reconnectFailed
               ? `Couldn't reach ProPresenter at ${settings?.pp_host ?? "the saved address"} — check it's open, then reconnect here.`
-              : "Not connected to ProPresenter — live widgets are idle."}
+              : "Not connected to ProPresenter — its widgets are idle."}
           {!IS_WEB && (
             <button className="btn small" disabled={reconnecting} onClick={tryReconnect}>
               {reconnecting ? "Connecting…" : "Connect"}
             </button>
           )}
+        </div>
+      )}
+
+      {!pp2.connected && dashboardPpInstances(active.widgets).includes(2) && (
+        <div className="banner dash-banner">
+          propresenter 2 is offline — its widgets are idle.
+          {!IS_WEB && <button className="btn small" onClick={() => onNavigate("propresenter2")}>Connect propresenter 2</button>}
         </div>
       )}
 
@@ -378,7 +388,8 @@ export function Dashboard({ onNavigate }: { onNavigate: (p: any) => void }) {
             {WIDGET_GROUP_ORDER.map((group) => {
               const q = pickQuery.trim().toLowerCase();
               const items = WIDGETS.filter(
-                (w) => w.group === group && w.label.toLowerCase().includes(q),
+                (w) => (group === "propresenter 2" ? isPpWidget(w.type) : w.group === group)
+                  && `${w.label} ${group}`.toLowerCase().includes(q),
               );
               if (items.length === 0) return null;
               return (
@@ -389,7 +400,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (p: any) => void }) {
                       <button
                         key={w.type}
                         className="wpick-item"
-                        onClick={() => addWidget(w.type)}
+                        onClick={() => addWidget(w.type, group === "propresenter 2" ? 2 : 1)}
                       >
                         <span className="wpick-name">{w.label}</span>
                         <span className="wpick-size">{w.w}×{w.h}</span>
@@ -437,12 +448,12 @@ export function Dashboard({ onNavigate }: { onNavigate: (p: any) => void }) {
                 style={{ minHeight: Math.min(440, Math.max(150, w.h * 62)) }}
               >
                 <div className="widget-bar">
-                  <span className="widget-title">{def.label}</span>
+                  <span className="widget-title">{widgetTitle(def.label, w)}</span>
                 </div>
                 <div className="widget-body">
                   <Comp
                     widget={w}
-                    editing={false}
+                    editing={editing}
                     update={(patch) => updateWidget(w.id, patch)}
                   />
                 </div>
@@ -499,7 +510,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (p: any) => void }) {
                 className={`widget ${justAdded === w.id ? "widget-new" : ""}`}
               >
                 <div className="widget-bar widget-drag">
-                  <span className="widget-title">{def.label}</span>
+                  <span className="widget-title">{widgetTitle(def.label, w)}</span>
                   {editing && (
                     <button
                       className="widget-remove"

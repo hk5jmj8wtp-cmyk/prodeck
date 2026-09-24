@@ -342,6 +342,9 @@ export interface Settings {
   lobby_auto_playlist: string;
   lobby_auto_index: number;
   lobby_auto_name: string;
+  pp2_lobby_auto_playlist: string;
+  pp2_lobby_auto_index: number;
+  pp2_lobby_auto_name: string;
   /** Auto check-in geolocation fence: building coordinates + radius (m).
    *  Blank coordinates = geo path off; the wifi/IP path is always on. */
   church_lat: string;
